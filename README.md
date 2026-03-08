@@ -2,14 +2,14 @@
 
 **[English](./README.md)** | **[中文](./README.zh-CN.md)**
 
-> AI Security Gateway — Intercept, detect, and protect AI API traffic in real-time
+> AI Security Vault — Protect your AI workflows, credentials, and interactions
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ## What is Claw-Vault?
 
-Claw-Vault is an open-source security proxy that sits between your AI tools and external APIs:
+Claw-Vault is an open-source **security vault for AI workflows** that protects your AI tools, credentials, and interactions:
 
 - **Sensitive Data Detection** — API keys, passwords, PII, credit cards, and 15+ pattern types
 - **Prompt Injection Defense** — Block role hijacking, instruction override, data exfiltration
@@ -17,6 +17,8 @@ Claw-Vault is an open-source security proxy that sits between your AI tools and 
 - **Auto-Sanitization** — Replace secrets with placeholders, restore on response
 - **Token Budget Control** — Daily/monthly limits with cost alerts
 - **Real-time Dashboard** — Web UI with per-agent config, detection details, quick tests
+
+The vault includes a **transparent proxy gateway module** that intercepts traffic between your AI tools and external APIs (OpenAI, Anthropic, etc.).
 
 ## Quick Start
 
@@ -62,17 +64,29 @@ claw-vault demo
 AI Tools / OpenClaw
        │
        ▼
-┌──────────────────┐
-│ Transparent Proxy │  :8765
-├──────────────────┤
-│ Detection Engine  │  Sensitive data + Injection + Commands
-├──────────────────┤
-│ Guard / Sanitizer │  Allow / Block / Sanitize
-├──────────────────┤
-│ Audit + Monitor   │  SQLite + Token budget
-├──────────────────┤
-│ Dashboard         │  :8766 — Web UI with agent config & tests
-└──────────────────┘
+┌─────────────────────────────────┐
+│      Claw-Vault (Security)      │
+├─────────────────────────────────┤
+│ Gateway Module                  │
+│  • Transparent Proxy  :8765     │
+│  • Traffic Interception         │
+├─────────────────────────────────┤
+│ Detection Engine                │
+│  • Sensitive data               │
+│  • Injection patterns           │
+│  • Dangerous commands           │
+├─────────────────────────────────┤
+│ Guard / Sanitizer               │
+│  • Allow / Block / Sanitize     │
+├─────────────────────────────────┤
+│ Audit + Monitor                 │
+│  • SQLite storage               │
+│  • Token budget tracking        │
+├─────────────────────────────────┤
+│ Dashboard                       │
+│  • Web UI :8766                 │
+│  • Agent config & tests         │
+└─────────────────────────────────┘
 ```
 
 ## Configuration

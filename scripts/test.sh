@@ -86,7 +86,7 @@ if nc -z 127.0.0.1 8765 2>/dev/null; then
     RESP=$(curl -s -x "$PROXY" -k "$API_URL" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $API_KEY" \
-        -d "{\"model\":\"Pro/MiniMaxAI/MiniMax-M2.5\",\"messages\":[{\"role\":\"user\",\"content\":\"用户张三 手机号 13812345678 身份证号 110101199003075134\"}],\"max_tokens\":5}" 2>/dev/null)
+        -d "{\"model\":\"Pro/MiniMaxAI/MiniMax-M2.5\",\"messages\":[{\"role\":\"user\",\"content\":\"User John Smith phone 13812345678 ID 110101199003075134\"}],\"max_tokens\":5}" 2>/dev/null)
     check "Strict: blocks PII with details" "echo '$RESP' | grep -q 'Claw-Vault'"
 
     # Test 3: Session continuity — blocked msg stripped from history

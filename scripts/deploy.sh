@@ -1,6 +1,6 @@
 #!/bin/bash
-# 一键部署并安装脚本（包含服务器端安装步骤）
-# 使用方法: ./deploy_and_install.sh <server_ip> [server_user]
+# One-click deployment and installation script (includes server-side installation)
+# Usage: ./deploy.sh <server_ip> [server_user]
 
 set -e
 
@@ -11,26 +11,26 @@ VENV_PATH="$SERVER_PATH/venv"
 ARCHIVE_NAME="claw-vault.zip"
 
 if [ -z "$SERVER_IP" ]; then
-    echo "错误: 请提供服务器IP地址"
-    echo "使用方法: $0 <server_ip> [server_user]"
-    echo "示例: $0 123.45.67.89 root"
+    echo "Error: Please provide server IP address"
+    echo "Usage: $0 <server_ip> [server_user]"
+    echo "Example: $0 123.45.67.89 root"
     exit 1
 fi
 
 echo "========================================"
-echo "Claw-Vault 一键部署和安装"
+echo "Claw-Vault One-Click Deploy & Install"
 echo "========================================"
-echo "服务器: $SERVER_USER@$SERVER_IP"
-echo "目标路径: $SERVER_PATH"
+echo "Server: $SERVER_USER@$SERVER_IP"
+echo "Target path: $SERVER_PATH"
 echo "========================================"
 echo ""
 
-# 步骤 1-4: 打包和上传（复用 deploy_to_server.sh 的逻辑）
-echo "[1/6] 清理旧的打包文件..."
+# Steps 1-4: Package and upload
+echo "[1/6] Cleaning old package files..."
 rm -f "$ARCHIVE_NAME"
 rm -rf claw-vault-deploy
 
-echo "[2/6] 准备项目文件..."
+echo "[2/6] Preparing project files..."
 mkdir -p claw-vault-deploy
 cp -r src claw-vault-deploy/
 cp -r tests claw-vault-deploy/
@@ -46,108 +46,108 @@ cp config.example.yaml claw-vault-deploy/
 find claw-vault-deploy -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 find claw-vault-deploy -name "*.pyc" -delete 2>/dev/null || true
 
-echo "[3/6] 打包项目..."
+echo "[3/6] Packaging project..."
 cd claw-vault-deploy && zip -r "../$ARCHIVE_NAME" . -x "*.DS_Store" -x "__MACOSX/*" && cd ..
 
-echo "[4/6] 上传到服务器..."
+echo "[4/6] Uploading to server..."
 scp "$ARCHIVE_NAME" "$SERVER_USER@$SERVER_IP:/tmp/"
 
-# 步骤 5-6: 在服务器上解压、创建虚拟环境并安装
-echo "[5/6] 在服务器上解压..."
+# Steps 5-6: Extract on server, create venv and install
+echo "[5/6] Extracting on server..."
 ssh "$SERVER_USER@$SERVER_IP" << ENDSSH
 set -e
-echo "→ 创建目录并解压..."
+echo "→ Creating directory and extracting..."
 mkdir -p $SERVER_PATH
 cd $SERVER_PATH
 unzip -q -o /tmp/$ARCHIVE_NAME
 rm /tmp/$ARCHIVE_NAME
-echo "✓ 解压完成"
+echo "✓ Extraction complete"
 ENDSSH
 
-echo "[6/6] 在服务器上安装..."
+echo "[6/6] Installing on server..."
 ssh "$SERVER_USER@$SERVER_IP" << 'ENDSSH'
 set -e
 cd /root/prj/claw-vault
 
-echo "→ 检查 Python 版本..."
+echo "→ Checking Python version..."
 python3 --version
 
-echo "→ 检查系统依赖..."
-# 检测操作系统类型
+echo "→ Checking system dependencies..."
+# Detect OS type
 if [ -f /etc/debian_version ]; then
     # Debian/Ubuntu
     if ! dpkg -l | grep -q python3-venv; then
-        echo "  安装 python3-venv..."
+        echo "  Installing python3-venv..."
         export DEBIAN_FRONTEND=noninteractive
         apt-get update -qq
         apt-get install -y python3-venv python3-pip > /dev/null 2>&1
-        echo "✓ 系统依赖已安装"
+        echo "✓ System dependencies installed"
     else
-        echo "✓ 系统依赖已满足"
+        echo "✓ System dependencies satisfied"
     fi
 elif [ -f /etc/redhat-release ]; then
     # CentOS/RHEL
     if ! rpm -q python3-virtualenv > /dev/null 2>&1; then
-        echo "  安装 python3-virtualenv..."
+        echo "  Installing python3-virtualenv..."
         yum install -y python3-virtualenv > /dev/null 2>&1
-        echo "✓ 系统依赖已安装"
+        echo "✓ System dependencies installed"
     else
-        echo "✓ 系统依赖已满足"
+        echo "✓ System dependencies satisfied"
     fi
 fi
 
-echo "→ 创建虚拟环境..."
-# 检查虚拟环境是否存在且完整
+echo "→ Creating virtual environment..."
+# Check if venv exists and is complete
 if [ -d "venv" ] && [ -f "venv/bin/activate" ]; then
-    echo "  虚拟环境已存在且完整"
+    echo "  Virtual environment already exists and is complete"
 else
     if [ -d "venv" ]; then
-        echo "  检测到损坏的虚拟环境，重新创建..."
+        echo "  Detected corrupted venv, recreating..."
         rm -rf venv
     fi
     python3 -m venv venv
-    echo "✓ 虚拟环境创建完成"
+    echo "✓ Virtual environment created"
 fi
 
-echo "→ 激活虚拟环境并安装..."
+echo "→ Activating venv and installing..."
 source venv/bin/activate
 
-echo "→ 升级 pip..."
+echo "→ Upgrading pip..."
 pip install --upgrade pip setuptools wheel -q
 
-echo "→ 安装 Claw-Vault（开发模式）..."
+echo "→ Installing Claw-Vault (dev mode)..."
 pip install -e . -q
 
-echo "→ 验证安装..."
+echo "→ Verifying installation..."
 claw-vault --version
 
 echo ""
-echo "✅ 安装完成！"
+echo "✅ Installation complete!"
 echo ""
-echo "可用命令:"
+echo "Available commands:"
 echo "  claw-vault --version"
 echo "  claw-vault scan 'test text'"
 echo "  claw-vault demo"
 echo "  claw-vault start"
 ENDSSH
 
-# 清理本地临时文件
+# Clean up local temp files
 echo ""
-echo "[清理] 删除本地临时文件..."
+echo "[Cleanup] Removing local temp files..."
 rm -rf claw-vault-deploy
 rm -f "$ARCHIVE_NAME"
 
 echo ""
 echo "========================================"
-echo "✅ 部署和安装完成！"
+echo "✅ Deploy & Install Complete!"
 echo "========================================"
 echo ""
-echo "登录服务器测试:"
+echo "Login to server and test:"
 echo "  ssh $SERVER_USER@$SERVER_IP"
 echo "  cd $SERVER_PATH"
 echo "  source venv/bin/activate"
 echo "  claw-vault --version"
 echo ""
-echo "运行快速测试:"
+echo "Run quick test:"
 echo "  ./scripts/test.sh"
 echo ""
