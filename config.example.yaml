@@ -18,7 +18,28 @@ detection:
   passwords: true
   private_ips: true
   pii: true
+  # Custom detection patterns defined by users or generated via OpenClaw.
+  # Example:
+  # custom_patterns:
+  #   - id: "cp-contract-pdf"
+  #     name: "Contract PDF Upload"
+  #     category: "GENERIC_SECRET"
+  #     regex: "合同"
+  #     risk_score: 6.5
+  #     enabled: true
+  #     description: "Trigger when user uploads content containing the word 合同"
   custom_patterns: []
+  # Custom test cases to be shown in the Dashboard Test tab alongside built-ins.
+  # Example:
+  # custom_test_cases:
+  #   - id: "tc-contract-pdf-1"
+  #     name: "合同 PDF 上传检测"
+  #     category: "sensitive"
+  #     description: "Trigger when a合同PDFis uploaded for客服Agent"
+  #     text: "用户上传了一个包含合同字样的 PDF 文件。"
+  #     linked_pattern_ids:
+  #       - "cp-contract-pdf"
+  custom_test_cases: []
 
 guard:
   mode: "permissive" # permissive | interactive | strict

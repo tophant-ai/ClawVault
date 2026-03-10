@@ -251,6 +251,29 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Custom Detection Rules -->
+                <div class="mt-6 bg-surface-900 rounded-2xl border border-gray-800/50 p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <div class="w-7 h-7 bg-vault-500/10 rounded-lg flex items-center justify-center">
+                                    <svg class="w-4 h-4 text-vault-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2l7 4v6c0 5-3.5 9.5-7 10-3.5-.5-7-5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
+                                </div>
+                                <h4 class="text-sm font-semibold text-white">Custom Detection Rules</h4>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">Rules created manually or via OpenClaw to cover custom scenarios.</p>
+                        </div>
+                        <button onclick="openCustomPatternModal()" class="px-3 py-1.5 bg-vault-600 hover:bg-vault-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Add Rule
+                        </button>
+                    </div>
+                    <div id="custom-patterns-list" class="space-y-2 text-xs text-gray-400">
+                        <!-- populated by JS -->
+                    </div>
+                    <p class="text-[11px] text-gray-600 mt-3">Custom rules are persisted to <code class="font-mono text-gray-400">config.yaml</code> and applied globally.</p>
+                </div>
             </section>
 
             <!-- ============ AGENTS TAB ============ -->
@@ -314,8 +337,27 @@
                 </div>
 
                 <!-- Built-in test cases -->
-                <div id="test-cases-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="text-center text-gray-600 text-sm py-8 col-span-2">Loading test cases...</div>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div class="lg:col-span-2">
+                        <div id="test-cases-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="text-center text-gray-600 text-sm py-8 col-span-2">Loading test cases...</div>
+                        </div>
+                    </div>
+                    <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <div>
+                                <h4 class="text-sm font-semibold text-white">Custom Test Cases</h4>
+                                <p class="text-xs text-gray-500 mt-1">Maintain your own test inputs for regression.</p>
+                            </div>
+                            <button onclick="openCustomTestCaseModal()" class="px-3 py-1.5 bg-vault-600 hover:bg-vault-500 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                Add
+                            </button>
+                        </div>
+                        <div id="custom-test-cases-list" class="space-y-2 text-xs text-gray-400">
+                            <!-- populated by JS -->
+                        </div>
+                    </div>
                 </div>
             </section>
         </div>
@@ -399,6 +441,8 @@ let currentTab = 'dashboard';
 let scanHistory = [];
 let agents = [];
 let detectionConfig = {};
+let customPatterns = [];
+let customTestCases = [];
 
 // ===================== API =====================
 async function api(path, opts = {}) {
@@ -688,9 +732,15 @@ const MODE_DESC = {
 };
 
 async function loadDetectionConfig() {
-    const [config, guard] = await Promise.all([api('/config/detection'), api('/config/guard')]);
+    const [config, guard, patterns] = await Promise.all([
+        api('/config/detection'),
+        api('/config/guard'),
+        api('/config/custom-patterns'),
+    ]);
     if (config) detectionConfig = config;
+    if (Array.isArray(patterns)) customPatterns = patterns;
     renderConfigToggles();
+    renderCustomPatterns();
     if (guard) {
         const sel = document.getElementById('guard-mode-select');
         if (sel) sel.value = guard.mode || 'permissive';
@@ -760,6 +810,88 @@ async function updateConfig(key, value) {
     } else {
         cb.style.right = 'auto'; cb.style.left = '0'; cb.style.borderColor = '#4b5563';
         label.style.backgroundColor = '#374151';
+    }
+}
+
+async function loadCustomPatterns() {
+    const patterns = await api('/config/custom-patterns');
+    if (Array.isArray(patterns)) {
+        customPatterns = patterns;
+        renderCustomPatterns();
+    }
+}
+
+function renderCustomPatterns() {
+    const el = document.getElementById('custom-patterns-list');
+    if (!el) return;
+    if (!customPatterns.length) {
+        el.innerHTML = '<div class="text-gray-600 text-xs">No custom rules yet. Use “Add Rule” or generate via OpenClaw.</div>';
+        return;
+    }
+    el.innerHTML = customPatterns.map(p => {
+        const enabled = p.enabled !== false;
+        const badge = enabled ? '<span class="badge bg-vault-500/10 text-vault-400">Enabled</span>' : '<span class="badge bg-gray-700/50 text-gray-400">Disabled</span>';
+        const source = p.generated_by ? `<span class="badge bg-blue-500/10 text-blue-400">${escHtml(p.generated_by)}</span>` : '';
+        return `
+        <div class="flex items-start gap-2 px-3 py-2 rounded-lg bg-surface-800/70 border border-gray-800/60">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-0.5">
+                    <span class="text-[11px] font-semibold text-gray-200 truncate">${escHtml(p.name || p.id)}</span>
+                    ${badge}
+                    ${source}
+                </div>
+                <div class="text-[11px] text-gray-500 mb-1 truncate">Category: ${escHtml(p.category || 'GENERIC_SECRET')} · Risk ${p.risk_score ?? 7.0}</div>
+                <pre class="text-[11px] text-gray-400 bg-surface-900 rounded px-2 py-1 whitespace-pre-wrap break-all max-h-16 overflow-auto border border-gray-800/60">${escHtml(p.regex || '')}</pre>
+            </div>
+            <div class="flex flex-col gap-1 ml-2">
+                <button class="px-2 py-0.5 text-[11px] bg-white/5 hover:bg-white/10 rounded text-gray-300" onclick="openCustomPatternModal(${_jsonSafe(p)})">Edit</button>
+                <button class="px-2 py-0.5 text-[11px] bg-red-500/10 hover:bg-red-500/20 rounded text-red-400" onclick="deleteCustomPattern('${p.id}')">Delete</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function openCustomPatternModal(pattern) {
+    const id = pattern?.id || `cp-${Date.now().toString(36)}`;
+    const name = prompt('Rule name', pattern?.name || '');
+    if (name === null) return;
+    const category = prompt('Pattern category (PatternCategory enum name, e.g. GENERIC_SECRET)', pattern?.category || 'GENERIC_SECRET') || 'GENERIC_SECRET';
+    const regex = prompt('Regex pattern', pattern?.regex || '');
+    if (!regex) return alert('Regex is required');
+    const risk = parseFloat(prompt('Risk score (0-10)', String(pattern?.risk_score ?? 7.0)) || '7');
+    const enabled = confirm('Enable this rule?');
+    const description = prompt('Description (optional)', pattern?.description || '') || undefined;
+
+    saveCustomPattern({
+        id,
+        name,
+        category,
+        regex,
+        risk_score: isNaN(risk) ? 7.0 : risk,
+        enabled,
+        description,
+        generated_by: pattern?.generated_by,
+        created_at: pattern?.created_at,
+    });
+}
+
+async function saveCustomPattern(pattern) {
+    const saved = await api('/config/custom-patterns', {
+        method: 'POST',
+        body: JSON.stringify(pattern),
+    });
+    if (Array.isArray(saved)) {
+        customPatterns = saved;
+        renderCustomPatterns();
+    }
+}
+
+async function deleteCustomPattern(id) {
+    if (!confirm('Delete this custom rule?')) return;
+    const res = await api('/config/custom-patterns/' + id, { method: 'DELETE' });
+    if (res?.deleted) {
+        customPatterns = customPatterns.filter(p => p.id !== id);
+        renderCustomPatterns();
     }
 }
 
@@ -928,26 +1060,61 @@ async function loadTestCases() {
     const cases = await api('/test-cases');
     if (!cases) return;
     const el = document.getElementById('test-cases-grid');
-    el.innerHTML = cases.map(tc => {
-        const cat = CATEGORY_BADGE[tc.category] || CATEGORY_BADGE.mixed;
-        return `
-        <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5 hover:border-gray-700/60 transition-colors group">
-            <div class="flex items-center justify-between mb-3">
-                <div class="flex items-center gap-2">
-                    <span class="badge ${cat.bg} ${cat.text}">${cat.label}</span>
-                    <h4 class="text-sm font-semibold text-white">${escHtml(tc.name)}</h4>
-                </div>
-            </div>
-            <p class="text-xs text-gray-500 mb-3">${escHtml(tc.description)}</p>
-            <pre class="bg-surface-950 rounded-xl p-3 text-xs text-gray-400 whitespace-pre-wrap break-all font-mono mb-4 border border-gray-800/30 max-h-24 overflow-auto">${escHtml(tc.text)}</pre>
-            <button onclick="runTestCase('${tc.id}', this)" class="w-full px-3 py-2 bg-vault-600/80 hover:bg-vault-500 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1.5">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                Run Test
-            </button>
-        </div>`;
-    }).join('');
+    const customList = document.getElementById('custom-test-cases-list');
+    const builtin = cases.filter(tc => tc.source === 'builtin' || !tc.source);
+    const custom = cases.filter(tc => tc.source === 'custom');
+
+    el.innerHTML = builtin.map(tc => renderTestCaseCard(tc)).join('') || '<div class="text-center text-gray-600 text-sm py-8 col-span-2">No built-in test cases.</div>';
+    customList.innerHTML = custom.length
+        ? custom.map(tc => renderCustomTestCaseRow(tc)).join('')
+        : '<div class="text-gray-600 text-xs">No custom test cases yet. Use “Add” to create one.</div>';
+
     // store for later use
     window._testCases = cases;
+}
+
+function renderTestCaseCard(tc) {
+    const cat = CATEGORY_BADGE[tc.category] || CATEGORY_BADGE.mixed;
+    return `
+    <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5 hover:border-gray-700/60 transition-colors group">
+        <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+                <span class="badge ${cat.bg} ${cat.text}">${cat.label}</span>
+                <h4 class="text-sm font-semibold text-white">${escHtml(tc.name)}</h4>
+            </div>
+        </div>
+        <p class="text-xs text-gray-500 mb-3">${escHtml(tc.description)}</p>
+        <pre class="bg-surface-950 rounded-xl p-3 text-xs text-gray-400 whitespace-pre-wrap break-all font-mono mb-4 border border-gray-800/30 max-h-24 overflow-auto">${escHtml(tc.text)}</pre>
+        <button onclick="runTestCase('${tc.id}', this)" class="w-full px-3 py-2 bg-vault-600/80 hover:bg-vault-500 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-1.5">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Run Test
+        </button>
+    </div>`;
+}
+
+function renderCustomTestCaseRow(tc) {
+    const cat = CATEGORY_BADGE[tc.category] || CATEGORY_BADGE.mixed;
+    const linked = (tc.linked_pattern_ids || []).length
+        ? `<span class="text-[10px] text-gray-500">Linked rules: ${(tc.linked_pattern_ids || []).length}</span>`
+        : '';
+    return `
+    <div class="px-3 py-2 rounded-lg bg-surface-800/70 border border-gray-800/60">
+        <div class="flex items-start gap-2">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                    <span class="badge ${cat.bg} ${cat.text}">${cat.label}</span>
+                    <span class="text-[11px] font-semibold text-gray-200 truncate">${escHtml(tc.name)}</span>
+                </div>
+                <p class="text-[11px] text-gray-500 mt-0.5 line-clamp-2">${escHtml(tc.description)}</p>
+                ${linked}
+            </div>
+            <div class="flex flex-col gap-1 ml-2">
+                <button class="px-2 py-0.5 text-[11px] bg-white/5 hover:bg-white/10 rounded text-gray-300" onclick="runTestCase('${tc.id}')">Run</button>
+                <button class="px-2 py-0.5 text-[11px] bg-white/5 hover:bg-white/10 rounded text-gray-300" onclick="openCustomTestCaseModal(${_jsonSafe(tc)})">Edit</button>
+                <button class="px-2 py-0.5 text-[11px] bg-red-500/10 hover:bg-red-500/20 rounded text-red-400" onclick="deleteCustomTestCase('${tc.id}')">Del</button>
+            </div>
+        </div>
+    </div>`;
 }
 
 async function runTestCase(tcId, btn) {
@@ -979,6 +1146,50 @@ async function runCustomScan() {
         body: JSON.stringify({ text, agent_id: agentId || undefined }),
     });
     if (result) showTestResult(result);
+}
+
+function openCustomTestCaseModal(tc) {
+    const id = tc?.id || `tc-custom-${Date.now().toString(36)}`;
+    const name = prompt('Test case name', tc?.name || '');
+    if (name === null) return;
+    const category = prompt('Category (sensitive/command/injection/mixed)', tc?.category || 'sensitive') || 'sensitive';
+    const description = prompt('Description', tc?.description || '') || '';
+    const text = prompt('Test input text', tc?.text || '');
+    if (!text) return alert('Text is required');
+    const linked = prompt('Linked pattern IDs (comma separated, optional)', (tc?.linked_pattern_ids || []).join(','));
+    const linkedIds = linked ? linked.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+    saveCustomTestCase({
+        id,
+        name,
+        category,
+        description,
+        text,
+        linked_pattern_ids: linkedIds,
+        generated_by: tc?.generated_by,
+        created_at: tc?.created_at,
+    });
+}
+
+async function saveCustomTestCase(tc) {
+    const saved = await api('/config/custom-test-cases', {
+        method: 'POST',
+        body: JSON.stringify(tc),
+    });
+    if (Array.isArray(saved)) {
+        customTestCases = saved;
+        // Re-load combined view to keep things in sync.
+        loadTestCases();
+    }
+}
+
+async function deleteCustomTestCase(id) {
+    if (!confirm('Delete this custom test case?')) return;
+    const res = await api('/config/custom-test-cases/' + id, { method: 'DELETE' });
+    if (res?.deleted) {
+        customTestCases = customTestCases.filter(tc => tc.id !== id);
+        loadTestCases();
+    }
 }
 
 function showTestResult(result) {
@@ -1014,6 +1225,14 @@ function showTestResult(result) {
 function escHtml(str) {
     if (!str) return '';
     return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/`/g,'&#96;').replace(/\$/g,'&#36;');
+}
+
+function _jsonSafe(obj) {
+    try {
+        return JSON.stringify(obj).replace(/</g, '\\u003c');
+    } catch {
+        return 'null';
+    }
 }
 
 async function refreshAll() {

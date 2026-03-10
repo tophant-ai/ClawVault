@@ -22,13 +22,22 @@ class SensitiveDetector:
         self,
         patterns: list[DetectionPattern] | None = None,
         enabled_categories: set[PatternCategory] | None = None,
+        custom_patterns: list[DetectionPattern] | None = None,
     ) -> None:
         self._patterns = patterns or BUILTIN_PATTERNS
         self._enabled_categories = enabled_categories
         if self._enabled_categories:
             self._patterns = [
-                p for p in self._patterns
+                p
+                for p in self._patterns
                 if p.category in self._enabled_categories and p.enabled
+            ]
+
+        # Append any custom patterns after applying category filtering so they
+        # are always available when explicitly configured.
+        if custom_patterns:
+            self._patterns = list(self._patterns) + [
+                p for p in custom_patterns if p.enabled
             ]
 
     def detect(self, text: str) -> list[DetectionResult]:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -33,7 +33,14 @@ class DetectionConfig(BaseModel):
     passwords: bool = True
     private_ips: bool = True
     pii: bool = True
-    custom_patterns: list[str] = Field(default_factory=list)
+    # User-defined detection patterns, persisted in config.yaml.
+    # Each item is a dict-like structure that can be interpreted by detectors
+    # (e.g. name/regex/category/risk_score/enabled/description).
+    custom_patterns: list[dict[str, Any]] = Field(default_factory=list)
+    # User-defined test cases for the dashboard /scan tests.
+    # Each item is expected to contain id/name/category/description/text and
+    # optional bookkeeping fields (e.g. linked_pattern_ids, generated_by).
+    custom_test_cases: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class GuardConfig(BaseModel):

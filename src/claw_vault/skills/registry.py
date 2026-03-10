@@ -73,6 +73,7 @@ class SkillRegistry:
         from claw_vault.skills.vault_guard import VaultGuardSkill
         from claw_vault.skills.security_report import SecurityReportSkill
         from claw_vault.skills.skill_audit import SkillAuditSkill
+        from claw_vault.skills.rule_authoring import RuleAuthoringSkill
 
         for cls in [
             SanitizeRestoreSkill,
@@ -81,6 +82,7 @@ class SkillRegistry:
             VaultGuardSkill,
             SecurityReportSkill,
             SkillAuditSkill,
+            RuleAuthoringSkill,
         ]:
             self.register(cls)
 

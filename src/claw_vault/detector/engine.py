@@ -7,6 +7,7 @@ from enum import Enum
 
 import structlog
 
+from claw_vault.config import DetectionConfig
 from claw_vault.detector.sensitive import SensitiveDetector
 from claw_vault.detector.command import CommandDetector, CommandRisk
 from claw_vault.detector.injection import InjectionDetector, InjectionResult
@@ -73,8 +74,14 @@ class ScanResult:
 class DetectionEngine:
     """Orchestrates all detection sub-engines for comprehensive scanning."""
 
-    def __init__(self) -> None:
-        self.sensitive_detector = SensitiveDetector()
+    def __init__(self, detection_config: DetectionConfig | None = None) -> None:
+        # Build sensitive detector according to global detection configuration.
+        # When no config is provided (e.g. tests), fall back to built-ins only.
+        if detection_config is not None:
+            custom_patterns = _build_custom_patterns(detection_config)
+            self.sensitive_detector = SensitiveDetector(custom_patterns=custom_patterns)
+        else:
+            self.sensitive_detector = SensitiveDetector()
         self.command_detector = CommandDetector()
         self.injection_detector = InjectionDetector()
 
@@ -110,3 +117,41 @@ class DetectionEngine:
             logger.info("scan_complete", **result.summary())
 
         return result
+
+
+def _build_custom_patterns(config: DetectionConfig) -> list[DetectionPattern]:
+    """Convert DetectionConfig.custom_patterns into DetectionPattern objects."""
+    from claw_vault.detector.patterns import DetectionPattern, PatternCategory
+    import re
+
+    patterns: list[DetectionPattern] = []
+    for item in config.custom_patterns or []:
+        # Defensive parsing – ignore malformed entries gracefully.
+        try:
+            name = item.get("name") or item.get("id") or "custom_pattern"
+            regex_str = item.get("regex")
+            if not regex_str:
+                continue
+            category_name = item.get("category") or "GENERIC_SECRET"
+            try:
+                category = PatternCategory[category_name]
+            except KeyError:
+                category = PatternCategory.GENERIC_SECRET
+            risk_score = float(item.get("risk_score", 7.0))
+            enabled = bool(item.get("enabled", True))
+            description = item.get("description") or f"Custom pattern: {name}"
+
+            pattern = DetectionPattern(
+                category=category,
+                name=str(name),
+                regex=re.compile(regex_str),
+                risk_score=risk_score,
+                enabled=enabled,
+                description=description,
+            )
+            patterns.append(pattern)
+        except Exception:
+            # Never break detection because of a bad custom pattern.
+            continue
+
+    return patterns

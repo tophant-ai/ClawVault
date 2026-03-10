@@ -42,3 +42,6 @@ Thumbs.db
 # Rust (Phase 3)
 target/
 Cargo.lock
+
+doc/dev/
+LOG.md
