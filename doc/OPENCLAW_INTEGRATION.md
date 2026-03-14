@@ -33,6 +33,7 @@ source venv/bin/activate
 ```
 
 This script will:
+
 1. Verify ClawVault is installed
 2. Inject proxy environment variables into `openclaw-gateway.service` (systemd)
 3. Initialize ClawVault config with `ssl_verify: false`
@@ -89,11 +90,11 @@ All AI API calls from OpenClaw will now pass through ClawVault.
 
 Recommended modes:
 
-| Environment | Guard Mode | Auto-Sanitize | Notes |
-|-------------|-----------|---------------|-------|
-| Development | `permissive` | off | Log only, no interference |
-| Staging | `interactive` | on | Auto-sanitize secrets transparently |
-| Production | `strict` | — | Block all threats |
+| Environment | Guard Mode    | Auto-Sanitize | Notes                               |
+| ----------- | ------------- | ------------- | ----------------------------------- |
+| Development | `permissive`  | off           | Log only, no interference           |
+| Staging     | `interactive` | on            | Auto-sanitize secrets transparently |
+| Production  | `strict`      | —             | Block all threats                   |
 
 Switch via Dashboard Config tab or API:
 
@@ -130,11 +131,20 @@ proxy:
 **SSL/TLS errors**: Set `ssl_verify: false` in config and `NODE_TLS_REJECT_UNAUTHORIZED=0` in the OpenClaw environment.
 
 **Proxy not reachable**: Confirm ClawVault is running:
+
 ```bash
 curl -s http://127.0.0.1:8766/api/health
 ```
 
+The health payload now includes `openclaw_session_redaction.enabled`,
+`openclaw_session_redaction.running`, `openclaw_session_redaction.watch_roots`,
+and `openclaw_session_redaction.last_watch_error`.
+`enabled` and `running` must both be `true` if transcript cleanup is expected to work.
+`watch_roots` must include the actual OpenClaw transcript root, especially when OpenClaw is
+running under `/root` or another home directory.
+
 **Restart OpenClaw after config changes**:
+
 ```bash
 systemctl --user restart openclaw-gateway
 ```
@@ -166,6 +176,7 @@ The API returns a complete rule definition. Save it to your rules file or apply 
 **Policy:** "Auto-sanitize all API keys and tokens in development environment"
 
 **Generated Rule:**
+
 ```yaml
 - id: dev-sanitize-api-keys
   name: Development API Key Sanitization
@@ -183,6 +194,7 @@ The API returns a complete rule definition. Save it to your rules file or apply 
 ```
 
 **Integration:**
+
 ```bash
 # Generate and apply
 curl -X POST http://localhost:8766/api/rules/generate \
@@ -203,6 +215,7 @@ curl -X POST http://localhost:8766/api/config/rules \
 **Policy:** "Block all prompt injection and jailbreak attempts"
 
 **Generated Rule:**
+
 ```yaml
 - id: block-injection-attacks
   name: Block All Injection Attempts
@@ -219,6 +232,7 @@ curl -X POST http://localhost:8766/api/config/rules \
 **Policy:** "For production environment, block high-risk content (score >= 8.0), sanitize medium-risk (score 5.0-7.9), and allow low-risk"
 
 **Generated Rules:**
+
 ```yaml
 - id: prod-block-high-risk
   name: Production Block High Risk
@@ -258,7 +272,7 @@ import sys
 
 def generate_rule(policy: str, claw_vault_url: str = "http://localhost:8766"):
     """Generate a security rule from natural language policy."""
-    
+
     response = requests.post(
         f"{claw_vault_url}/api/rules/generate",
         json={
@@ -267,7 +281,7 @@ def generate_rule(policy: str, claw_vault_url: str = "http://localhost:8766"):
             "temperature": 0.1
         }
     )
-    
+
     if response.status_code == 200:
         result = response.json()
         if result["success"]:
@@ -277,12 +291,12 @@ def generate_rule(policy: str, claw_vault_url: str = "http://localhost:8766"):
             print("\nGenerated YAML:")
             import yaml
             print(yaml.dump(result["rules"], sort_keys=False))
-            
+
             if result["warnings"]:
                 print("\n⚠ Warnings:")
                 for warning in result["warnings"]:
                     print(f"  - {warning}")
-            
+
             return result["rules"]
         else:
             print(f"✗ Failed to generate rule: {result.get('error')}")
@@ -296,12 +310,13 @@ if __name__ == "__main__":
         print("Usage: generate-security-rule.py '<policy description>'")
         print("Example: generate-security-rule.py 'Block all AWS credentials'")
         sys.exit(1)
-    
+
     policy = " ".join(sys.argv[1:])
     generate_rule(policy)
 ```
 
 **Usage in OpenClaw:**
+
 ```bash
 # From OpenClaw terminal
 openclaw skill run generate-security-rule "Block all requests with AWS credentials"
@@ -324,6 +339,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -382,6 +398,7 @@ Content-Type: application/json
 ### Environment-Specific Configurations
 
 **Development:**
+
 ```bash
 # Generate permissive rules for development
 curl -X POST http://localhost:8766/api/rules/generate \
@@ -389,6 +406,7 @@ curl -X POST http://localhost:8766/api/rules/generate \
 ```
 
 **Staging:**
+
 ```bash
 # Generate interactive rules for staging
 curl -X POST http://localhost:8766/api/rules/generate \
@@ -396,6 +414,7 @@ curl -X POST http://localhost:8766/api/rules/generate \
 ```
 
 **Production:**
+
 ```bash
 # Generate strict rules for production
 curl -X POST http://localhost:8766/api/rules/generate \
@@ -405,15 +424,18 @@ curl -X POST http://localhost:8766/api/rules/generate \
 ### Troubleshooting
 
 **Rule not generating:**
+
 - Ensure `OPENAI_API_KEY` is set in ClawVault environment
 - Check ClawVault logs: `journalctl --user -u claw-vault -f`
 
 **Rule not taking effect:**
+
 - Verify rule is enabled: `enabled: true`
 - Check rule order in `~/.ClawVault/rules.yaml`
 - Restart ClawVault: `systemctl --user restart claw-vault`
 
 **False positives:**
+
 - Adjust `min_risk_score` threshold
 - Use more specific `pattern_types`
 - Review detection patterns in Dashboard

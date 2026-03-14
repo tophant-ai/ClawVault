@@ -27,8 +27,7 @@ class SensitiveDetector:
         self._enabled_categories = enabled_categories
         if self._enabled_categories:
             self._patterns = [
-                p for p in self._patterns
-                if p.category in self._enabled_categories and p.enabled
+                p for p in self._patterns if p.category in self._enabled_categories and p.enabled
             ]
 
     def detect(self, text: str) -> list[DetectionResult]:
@@ -84,10 +83,7 @@ class SensitiveDetector:
         used_ranges: list[tuple[int, int]] = []
 
         for result in results:
-            overlaps = any(
-                not (result.end <= s or result.start >= e)
-                for s, e in used_ranges
-            )
+            overlaps = any(not (result.end <= s or result.start >= e) for s, e in used_ranges)
             if not overlaps:
                 kept.append(result)
                 used_ranges.append((result.start, result.end))
@@ -103,6 +99,7 @@ class SensitiveDetector:
     ) -> None:
         """Add a user-defined detection pattern at runtime."""
         import re
+
         pattern = DetectionPattern(
             category=category,
             name=f"custom_{name}",

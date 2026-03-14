@@ -80,9 +80,7 @@ class TestSensitiveDetector:
         assert len(results) >= 2
 
     def test_custom_pattern(self, sensitive_detector):
-        sensitive_detector.add_custom_pattern(
-            "internal_id", r"INTERNAL-\d{8}", risk_score=6.0
-        )
+        sensitive_detector.add_custom_pattern("internal_id", r"INTERNAL-\d{8}", risk_score=6.0)
         results = sensitive_detector.detect("ID is INTERNAL-12345678")
         assert len(results) >= 1
         assert any("custom" in r.pattern_type for r in results)

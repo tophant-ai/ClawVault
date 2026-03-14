@@ -10,8 +10,10 @@ from pydantic import BaseModel, Field
 
 class AuditRecord(BaseModel):
     """Single audit log entry."""
+
     id: Optional[int] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    agent_id: str | None = None
     session_id: str = ""
     direction: str = "request"  # "request" | "response"
     api_endpoint: str = ""
@@ -24,12 +26,13 @@ class AuditRecord(BaseModel):
     action_taken: str = "allow"  # allow | block | sanitize | ask_user
     skill_name: Optional[str] = None
     details: str = ""
-    agent_name: Optional[str] = None
-    user_content: Optional[str] = None
+    agent_name: str | None = None
+    user_content: str | None = None
 
 
 class DailySummary(BaseModel):
     """Aggregated daily statistics."""
+
     date: str
     total_requests: int = 0
     total_tokens: int = 0

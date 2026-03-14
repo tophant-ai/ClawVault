@@ -96,9 +96,11 @@ class SecurityReportSkill(BaseSkill):
         for action, count in sorted(action_counts.items()):
             lines.append(f"  • {action}: {count}")
         lines.append(f"")
-        lines.append(f"📦 **Vault**: {vault_stats['total_managed']} file(s) managed, "
-                      f"{vault_stats['total_accesses']} access(es), "
-                      f"{vault_stats['total_blocks']} block(s)")
+        lines.append(
+            f"📦 **Vault**: {vault_stats['total_managed']} file(s) managed, "
+            f"{vault_stats['total_accesses']} access(es), "
+            f"{vault_stats['total_blocks']} block(s)"
+        )
 
         return SkillResult(
             success=True,

@@ -76,12 +76,14 @@ class SanitizeRestoreSkill(BaseSkill):
             for d in detections
         ]
 
-        self.ctx.log_audit({
-            "skill": "sanitize-restore",
-            "action": "sanitize",
-            "detections": len(detections),
-            "categories": list({d.category.value for d in detections}),
-        })
+        self.ctx.log_audit(
+            {
+                "skill": "sanitize-restore",
+                "action": "sanitize",
+                "detections": len(detections),
+                "categories": list({d.category.value for d in detections}),
+            }
+        )
 
         return SkillResult(
             success=True,
@@ -119,11 +121,13 @@ class SanitizeRestoreSkill(BaseSkill):
         restored = self.ctx.restorer.restore(text, mapping)
         restorations = sum(1 for ph in placeholders_found if ph in mapping)
 
-        self.ctx.log_audit({
-            "skill": "sanitize-restore",
-            "action": "restore",
-            "restorations": restorations,
-        })
+        self.ctx.log_audit(
+            {
+                "skill": "sanitize-restore",
+                "action": "restore",
+                "restorations": restorations,
+            }
+        )
 
         return SkillResult(
             success=True,

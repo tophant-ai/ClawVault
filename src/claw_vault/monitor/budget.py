@@ -14,8 +14,8 @@ logger = structlog.get_logger()
 
 class BudgetStatus(str, Enum):
     OK = "ok"
-    WARNING = "warning"       # > 80% used
-    EXCEEDED = "exceeded"     # 100% used
+    WARNING = "warning"  # > 80% used
+    EXCEEDED = "exceeded"  # 100% used
     CIRCUIT_BREAK = "circuit_break"  # anomaly detected
 
 

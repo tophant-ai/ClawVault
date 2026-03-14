@@ -26,7 +26,9 @@ class TestSanitizeRestoreSkill:
         assert "clear_session" in names
 
     def test_sanitize_detects_api_key(self, skill):
-        result = skill.invoke("sanitize_message", text="key is sk-proj-abc123xyz456def789ghi012jkl345")
+        result = skill.invoke(
+            "sanitize_message", text="key is sk-proj-abc123xyz456def789ghi012jkl345"
+        )
         assert result.success
         assert result.data["detections"] >= 1
         assert "sk-proj-abc123xyz456def789ghi012jkl345" not in result.data["sanitized"]

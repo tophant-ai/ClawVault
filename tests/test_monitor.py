@@ -26,7 +26,9 @@ class TestTokenCounter:
 
     def test_detect_model_from_url(self, token_counter):
         assert "gpt" in token_counter.detect_model_from_url("https://api.openai.com/v1/chat")
-        assert "claude" in token_counter.detect_model_from_url("https://api.anthropic.com/v1/messages")
+        assert "claude" in token_counter.detect_model_from_url(
+            "https://api.anthropic.com/v1/messages"
+        )
 
 
 class TestBudgetManager:

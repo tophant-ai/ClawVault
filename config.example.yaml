@@ -44,3 +44,13 @@ cloud:
   enabled: false
   aiscc_api_url: "https://api.aiscc.io/v1/audit"
   aiscc_api_key: ""
+
+openclaw:
+  session_redaction:
+    enabled: true
+    sessions_root: "~/.openclaw/agents"
+    state_file: "~/.ClawVault/state/openclaw_session_redactor.json"
+    lock_timeout_ms: 3000
+    watch_debounce_ms: 250
+    watch_step_ms: 50
+    processing_retries: 3
