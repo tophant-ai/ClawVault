@@ -35,6 +35,7 @@ dependencies = [
     "structlog>=24.1",
     "httpx>=0.27.0",
     "rich>=13.7",
+    "watchfiles>=1.1.0",
 ]
 
 [project.optional-dependencies]

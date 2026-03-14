@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_CONFIG_DIR = Path.home() / ".ClawVault"
 DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_DIR / "config.yaml"
+DEFAULT_AGENTS_FILE = DEFAULT_CONFIG_DIR / "agents.yaml"
 
 
 class ProxyConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = 8765
     ssl_verify: bool = True
+    traffic_log_enabled: bool = True
+    traffic_log_path: Path = DEFAULT_CONFIG_DIR / "data" / "proxy_traffic.jsonl"
     intercept_hosts: list[str] = Field(
         default_factory=lambda: [
             "api.openai.com",
@@ -30,9 +32,18 @@ class ProxyConfig(BaseModel):
 class DetectionConfig(BaseModel):
     enabled: bool = True
     api_keys: bool = True
+    aws_credentials: bool = True
+    blockchain: bool = True
     passwords: bool = True
     private_ips: bool = True
     pii: bool = True
+    jwt_tokens: bool = True
+    ssh_keys: bool = True
+    credit_cards: bool = True
+    emails: bool = True
+    generic_secrets: bool = True
+    dangerous_commands: bool = True
+    prompt_injection: bool = True
     custom_patterns: list[str] = Field(default_factory=list)
 
 
@@ -66,6 +77,22 @@ class CloudConfig(BaseModel):
     aiscc_api_key: str = ""
 
 
+class OpenClawSessionRedactionConfig(BaseModel):
+    enabled: bool = True
+    sessions_root: Path = Path.home() / ".openclaw" / "agents"
+    state_file: Path = DEFAULT_CONFIG_DIR / "state" / "openclaw_session_redactor.json"
+    lock_timeout_ms: int = 3000
+    watch_debounce_ms: int = 250
+    watch_step_ms: int = 50
+    processing_retries: int = 3
+
+
+class OpenClawConfig(BaseModel):
+    session_redaction: OpenClawSessionRedactionConfig = Field(
+        default_factory=OpenClawSessionRedactionConfig
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="CLAW_VAULT_",
@@ -80,14 +107,16 @@ class Settings(BaseSettings):
     audit: AuditConfig = Field(default_factory=AuditConfig)
     dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     cloud: CloudConfig = Field(default_factory=CloudConfig)
+    openclaw: OpenClawConfig = Field(default_factory=OpenClawConfig)
 
     def ensure_dirs(self) -> None:
         self.config_dir.mkdir(parents=True, exist_ok=True)
         (self.config_dir / "certs").mkdir(exist_ok=True)
         (self.config_dir / "data").mkdir(exist_ok=True)
+        (self.config_dir / "state").mkdir(exist_ok=True)
 
 
-def load_settings(config_path: Optional[Path] = None) -> Settings:
+def load_settings(config_path: Path | None = None) -> Settings:
     """Load settings from environment and optional YAML config file."""
     import yaml
 
@@ -96,7 +125,7 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
     if path.exists():
         with open(path) as f:
             data = yaml.safe_load(f) or {}
-        
+
         # Fix corrupted custom_patterns field if present
         if "detection" in data and "custom_patterns" in data["detection"]:
             custom_patterns = data["detection"]["custom_patterns"]
@@ -108,7 +137,7 @@ def load_settings(config_path: Optional[Path] = None) -> Settings:
             else:
                 # Reset to empty list if not a list
                 data["detection"]["custom_patterns"] = []
-        
+
         settings = Settings(**data)
     settings.ensure_dirs()
     return settings

@@ -71,11 +71,13 @@ class VaultGuardSkill(BaseSkill):
 
         mf = self.ctx.file_manager.add_file(file_path)
 
-        self.ctx.log_audit({
-            "skill": "vault-guard",
-            "action": "add_file",
-            "file": str(path.resolve()),
-        })
+        self.ctx.log_audit(
+            {
+                "skill": "vault-guard",
+                "action": "add_file",
+                "file": str(path.resolve()),
+            }
+        )
 
         return SkillResult(
             success=True,
@@ -122,9 +124,7 @@ class VaultGuardSkill(BaseSkill):
     def discover_sensitive_files(self) -> SkillResult:
         """Scan for common sensitive files."""
         discovered = self.ctx.file_manager.auto_discover()
-        already_managed = [
-            p for p in discovered if self.ctx.file_manager.is_managed(p)
-        ]
+        already_managed = [p for p in discovered if self.ctx.file_manager.is_managed(p)]
         unmanaged = [p for p in discovered if p not in already_managed]
 
         return SkillResult(
@@ -187,32 +187,38 @@ class VaultGuardSkill(BaseSkill):
         # Check target domain
         for pattern in SUSPICIOUS_DOMAIN_PATTERNS:
             if re.search(pattern, url, re.IGNORECASE):
-                risks.append({
-                    "type": "suspicious_domain",
-                    "detail": f"Target URL matches suspicious pattern: {pattern}",
-                    "score": 8.0,
-                })
+                risks.append(
+                    {
+                        "type": "suspicious_domain",
+                        "detail": f"Target URL matches suspicious pattern: {pattern}",
+                        "score": 8.0,
+                    }
+                )
                 break
 
         # Check if content contains sensitive data
         if content:
             detections = self.ctx.detection_engine.sensitive_detector.detect(content)
             for d in detections:
-                risks.append({
-                    "type": "sensitive_data_in_payload",
-                    "detail": f"Outbound payload contains {d.description}: {d.masked_value}",
-                    "score": d.risk_score,
-                })
+                risks.append(
+                    {
+                        "type": "sensitive_data_in_payload",
+                        "detail": f"Outbound payload contains {d.description}: {d.masked_value}",
+                        "score": d.risk_score,
+                    }
+                )
 
         # Check if content references managed files
         managed_files = self.ctx.file_manager.list_managed()
         for mf in managed_files:
             if mf.path in content or Path(mf.path).name in content:
-                risks.append({
-                    "type": "managed_file_reference",
-                    "detail": f"Payload references managed file: {mf.path}",
-                    "score": 9.0,
-                })
+                risks.append(
+                    {
+                        "type": "managed_file_reference",
+                        "detail": f"Payload references managed file: {mf.path}",
+                        "score": 9.0,
+                    }
+                )
 
         max_score = max((r["score"] for r in risks), default=0.0)
         is_exfiltration = max_score >= 7.0
@@ -227,14 +233,16 @@ class VaultGuardSkill(BaseSkill):
             action = "allow"
             message = "Outbound request appears safe"
 
-        self.ctx.log_audit({
-            "skill": "vault-guard",
-            "action": "check_exfiltration",
-            "url": url,
-            "skill_name": skill_name,
-            "result": action,
-            "risks": len(risks),
-        })
+        self.ctx.log_audit(
+            {
+                "skill": "vault-guard",
+                "action": "check_exfiltration",
+                "url": url,
+                "skill_name": skill_name,
+                "result": action,
+                "risks": len(risks),
+            }
+        )
 
         return SkillResult(
             success=True,
@@ -287,13 +295,15 @@ class VaultGuardSkill(BaseSkill):
             action = "allow"
             message = "Command appears safe"
 
-        self.ctx.log_audit({
-            "skill": "vault-guard",
-            "action": "evaluate_command",
-            "command": command[:80],
-            "result": action,
-            "max_risk": max_score,
-        })
+        self.ctx.log_audit(
+            {
+                "skill": "vault-guard",
+                "action": "evaluate_command",
+                "command": command[:80],
+                "result": action,
+                "max_risk": max_score,
+            }
+        )
 
         return SkillResult(
             success=True,

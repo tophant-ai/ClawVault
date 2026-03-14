@@ -52,30 +52,36 @@ class SecurityScanSkill(BaseSkill):
 
         findings = []
         for s in scan.sensitive:
-            findings.append({
-                "category": "sensitive_data",
-                "type": s.pattern_type,
-                "description": s.description,
-                "masked_value": s.masked_value,
-                "risk_score": s.risk_score,
-                "position": [s.start, s.end],
-            })
+            findings.append(
+                {
+                    "category": "sensitive_data",
+                    "type": s.pattern_type,
+                    "description": s.description,
+                    "masked_value": s.masked_value,
+                    "risk_score": s.risk_score,
+                    "position": [s.start, s.end],
+                }
+            )
         for c in scan.commands:
-            findings.append({
-                "category": "dangerous_command",
-                "command": c.command[:60],
-                "risk_level": c.risk_level.value,
-                "risk_score": c.risk_score,
-                "reason": c.reason,
-            })
+            findings.append(
+                {
+                    "category": "dangerous_command",
+                    "command": c.command[:60],
+                    "risk_level": c.risk_level.value,
+                    "risk_score": c.risk_score,
+                    "reason": c.reason,
+                }
+            )
         for i in scan.injections:
-            findings.append({
-                "category": "prompt_injection",
-                "type": i.injection_type,
-                "matched": i.matched_text[:60],
-                "risk_score": i.risk_score,
-                "description": i.description,
-            })
+            findings.append(
+                {
+                    "category": "prompt_injection",
+                    "type": i.injection_type,
+                    "matched": i.matched_text[:60],
+                    "risk_score": i.risk_score,
+                    "description": i.description,
+                }
+            )
 
         return SkillResult(
             success=True,
@@ -117,21 +123,25 @@ class SecurityScanSkill(BaseSkill):
 
         findings = []
         for s in scan.sensitive:
-            line_num = content[:s.start].count("\n") + 1
-            findings.append({
-                "type": s.pattern_type,
-                "description": s.description,
-                "masked_value": s.masked_value,
-                "risk_score": s.risk_score,
-                "line": line_num,
-            })
+            line_num = content[: s.start].count("\n") + 1
+            findings.append(
+                {
+                    "type": s.pattern_type,
+                    "description": s.description,
+                    "masked_value": s.masked_value,
+                    "risk_score": s.risk_score,
+                    "line": line_num,
+                }
+            )
 
-        self.ctx.log_audit({
-            "skill": "security-scan",
-            "action": "scan_file",
-            "file": str(path),
-            "findings": len(findings),
-        })
+        self.ctx.log_audit(
+            {
+                "skill": "security-scan",
+                "action": "scan_file",
+                "file": str(path),
+                "findings": len(findings),
+            }
+        )
 
         return SkillResult(
             success=True,
@@ -161,8 +171,18 @@ class SecurityScanSkill(BaseSkill):
             return SkillResult(success=False, message=f"Directory not found: {directory}")
 
         target_patterns = [
-            "*.env", "*.env.*", "*.yaml", "*.yml", "*.json", "*.toml",
-            "*.ini", "*.cfg", "*.conf", "*.properties", "*.pem", "*.key",
+            "*.env",
+            "*.env.*",
+            "*.yaml",
+            "*.yml",
+            "*.json",
+            "*.toml",
+            "*.ini",
+            "*.cfg",
+            "*.conf",
+            "*.properties",
+            "*.pem",
+            "*.key",
         ]
 
         files_scanned = 0
@@ -177,7 +197,10 @@ class SecurityScanSkill(BaseSkill):
                     continue
                 # Skip common non-secret directories
                 parts = file_path.parts
-                if any(skip in parts for skip in ["node_modules", ".git", "venv", "__pycache__", ".venv"]):
+                if any(
+                    skip in parts
+                    for skip in ["node_modules", ".git", "venv", "__pycache__", ".venv"]
+                ):
                     continue
 
                 try:
@@ -190,12 +213,14 @@ class SecurityScanSkill(BaseSkill):
 
                 if detections:
                     total_findings += len(detections)
-                    file_results.append({
-                        "file": str(file_path.relative_to(dir_path)),
-                        "findings": len(detections),
-                        "max_risk": max(d.risk_score for d in detections),
-                        "types": list({d.category.value for d in detections}),
-                    })
+                    file_results.append(
+                        {
+                            "file": str(file_path.relative_to(dir_path)),
+                            "findings": len(detections),
+                            "max_risk": max(d.risk_score for d in detections),
+                            "types": list({d.category.value for d in detections}),
+                        }
+                    )
 
         file_results.sort(key=lambda r: r["max_risk"], reverse=True)
 
@@ -228,40 +253,59 @@ class SecurityScanSkill(BaseSkill):
 
         # Check for obfuscation patterns
         import re
-        if re.search(r'exec\s*\(', skill_code):
-            risk_factors.append({"factor": "dynamic_execution", "detail": "Uses exec()", "score": 7.5})
-        if re.search(r'eval\s*\(', skill_code):
+
+        if re.search(r"exec\s*\(", skill_code):
+            risk_factors.append(
+                {"factor": "dynamic_execution", "detail": "Uses exec()", "score": 7.5}
+            )
+        if re.search(r"eval\s*\(", skill_code):
             risk_factors.append({"factor": "dynamic_eval", "detail": "Uses eval()", "score": 7.5})
-        if re.search(r'base64\.(b64)?decode', skill_code):
-            risk_factors.append({"factor": "base64_decode", "detail": "Decodes base64 data", "score": 6.0})
-        if re.search(r'\\x[0-9a-f]{2}', skill_code, re.IGNORECASE):
-            risk_factors.append({"factor": "hex_encoding", "detail": "Contains hex-encoded strings", "score": 5.0})
+        if re.search(r"base64\.(b64)?decode", skill_code):
+            risk_factors.append(
+                {"factor": "base64_decode", "detail": "Decodes base64 data", "score": 6.0}
+            )
+        if re.search(r"\\x[0-9a-f]{2}", skill_code, re.IGNORECASE):
+            risk_factors.append(
+                {"factor": "hex_encoding", "detail": "Contains hex-encoded strings", "score": 5.0}
+            )
 
         # Check for suspicious network access
-        if re.search(r'requests\.(get|post|put|delete)', skill_code):
-            risk_factors.append({"factor": "network_requests", "detail": "Makes HTTP requests", "score": 4.0})
-        if re.search(r'urllib|httpx|aiohttp', skill_code):
-            risk_factors.append({"factor": "network_library", "detail": "Imports network library", "score": 3.0})
+        if re.search(r"requests\.(get|post|put|delete)", skill_code):
+            risk_factors.append(
+                {"factor": "network_requests", "detail": "Makes HTTP requests", "score": 4.0}
+            )
+        if re.search(r"urllib|httpx|aiohttp", skill_code):
+            risk_factors.append(
+                {"factor": "network_library", "detail": "Imports network library", "score": 3.0}
+            )
 
         # Check for file system access
         if re.search(r'open\s*\(.*["\']w', skill_code):
             risk_factors.append({"factor": "file_write", "detail": "Writes to files", "score": 5.0})
-        if re.search(r'os\.(system|popen|exec)', skill_code):
-            risk_factors.append({"factor": "os_command", "detail": "Executes OS commands", "score": 8.0})
-        if re.search(r'subprocess', skill_code):
-            risk_factors.append({"factor": "subprocess", "detail": "Runs subprocesses", "score": 6.0})
+        if re.search(r"os\.(system|popen|exec)", skill_code):
+            risk_factors.append(
+                {"factor": "os_command", "detail": "Executes OS commands", "score": 8.0}
+            )
+        if re.search(r"subprocess", skill_code):
+            risk_factors.append(
+                {"factor": "subprocess", "detail": "Runs subprocesses", "score": 6.0}
+            )
 
         # Check for credential access patterns
-        if re.search(r'(credentials|password|secret|api.?key)', skill_code, re.IGNORECASE):
-            risk_factors.append({"factor": "credential_access", "detail": "References credentials", "score": 5.0})
+        if re.search(r"(credentials|password|secret|api.?key)", skill_code, re.IGNORECASE):
+            risk_factors.append(
+                {"factor": "credential_access", "detail": "References credentials", "score": 5.0}
+            )
 
         # Add findings from detection engine
         for s in scan.sensitive:
-            risk_factors.append({
-                "factor": "hardcoded_secret",
-                "detail": f"Hardcoded {s.description}",
-                "score": s.risk_score,
-            })
+            risk_factors.append(
+                {
+                    "factor": "hardcoded_secret",
+                    "detail": f"Hardcoded {s.description}",
+                    "score": s.risk_score,
+                }
+            )
 
         max_score = max((f["score"] for f in risk_factors), default=0.0)
 
@@ -278,13 +322,15 @@ class SecurityScanSkill(BaseSkill):
             risk_level = "safe"
             recommendation = "ALLOW — No risk factors detected"
 
-        self.ctx.log_audit({
-            "skill": "security-scan",
-            "action": "assess_skill",
-            "target_skill": skill_name,
-            "risk_level": risk_level,
-            "factors": len(risk_factors),
-        })
+        self.ctx.log_audit(
+            {
+                "skill": "security-scan",
+                "action": "assess_skill",
+                "target_skill": skill_name,
+                "risk_level": risk_level,
+                "factors": len(risk_factors),
+            }
+        )
 
         return SkillResult(
             success=True,

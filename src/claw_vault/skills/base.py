@@ -26,22 +26,24 @@ logger = structlog.get_logger()
 
 class SkillPermission(str, Enum):
     """Permissions a Skill may request."""
-    READ_CHAT = "read_chat"            # Read user ↔ AI conversation
-    MODIFY_CHAT = "modify_chat"        # Modify outgoing/incoming messages
-    READ_FILES = "read_files"          # Read local files
-    WRITE_FILES = "write_files"        # Write/modify local files
-    NETWORK = "network"                # Make network requests
-    EXECUTE_COMMAND = "execute_command" # Execute system commands
+
+    READ_CHAT = "read_chat"  # Read user ↔ AI conversation
+    MODIFY_CHAT = "modify_chat"  # Modify outgoing/incoming messages
+    READ_FILES = "read_files"  # Read local files
+    WRITE_FILES = "write_files"  # Write/modify local files
+    NETWORK = "network"  # Make network requests
+    EXECUTE_COMMAND = "execute_command"  # Execute system commands
     ACCESS_CREDENTIALS = "access_credentials"  # Access vault credentials
-    AUDIT_LOG = "audit_log"            # Read/write audit logs
+    AUDIT_LOG = "audit_log"  # Read/write audit logs
 
 
 @dataclass
 class ToolDefinition:
     """Metadata for a single tool exposed by a Skill."""
+
     name: str
     description: str
-    parameters: dict[str, Any]       # JSON Schema for parameters
+    parameters: dict[str, Any]  # JSON Schema for parameters
     handler: Callable
     examples: list[dict] = field(default_factory=list)
 
@@ -49,6 +51,7 @@ class ToolDefinition:
 @dataclass
 class SkillManifest:
     """Metadata manifest for a Skill."""
+
     name: str
     version: str
     description: str
@@ -61,6 +64,7 @@ class SkillManifest:
 @dataclass
 class SkillResult:
     """Standard result returned by Skill tool invocations."""
+
     success: bool
     data: dict[str, Any] = field(default_factory=dict)
     message: str = ""
@@ -128,6 +132,7 @@ def tool(
             def scan_text(self, text: str) -> SkillResult:
                 ...
     """
+
     def decorator(func: Callable) -> Callable:
         tool_name = name or func.__name__
         # Auto-generate parameter schema from type hints
@@ -234,17 +239,19 @@ class BaseSkill(ABC):
         """Export tools in OpenAI function-calling format (for MCP/Agent integration)."""
         tools = []
         for td in self._tools.values():
-            tools.append({
-                "type": "function",
-                "function": {
-                    "name": f"{self.manifest().name}__{td.name}",
-                    "description": td.description,
-                    "parameters": {
-                        "type": "object",
-                        "properties": td.parameters,
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": f"{self.manifest().name}__{td.name}",
+                        "description": td.description,
+                        "parameters": {
+                            "type": "object",
+                            "properties": td.parameters,
+                        },
                     },
-                },
-            })
+                }
+            )
         return tools
 
     def to_skill_json(self) -> dict:

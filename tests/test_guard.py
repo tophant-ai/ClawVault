@@ -86,9 +86,7 @@ class TestRuleEngine:
             ]
         )
         # High-risk example: API key style token
-        high_scan = detection_engine.scan_request(
-            "sk-proj-abc123xyz456def789ghi012jkl345"
-        )
+        high_scan = detection_engine.scan_request("sk-proj-abc123xyz456def789ghi012jkl345")
         high_result = engine.evaluate(high_scan)
         assert high_result.action == Action.SANITIZE
 
@@ -114,9 +112,7 @@ class TestRuleEngine:
                 )
             ]
         )
-        scan = detection_engine.scan_request(
-            "My AWS key is AKIAIOSFODNN7EXAMPLE and nothing else."
-        )
+        scan = detection_engine.scan_request("My AWS key is AKIAIOSFODNN7EXAMPLE and nothing else.")
         result = engine.evaluate(scan)
         assert result.action == Action.ASK_USER
 

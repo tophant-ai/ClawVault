@@ -103,7 +103,9 @@ class FileManager:
         if skill_name:
             reason += f" by Skill '{skill_name}'"
 
-        logger.warning("managed_file_access", path=resolved, skill=skill_name, count=mf.access_count)
+        logger.warning(
+            "managed_file_access", path=resolved, skill=skill_name, count=mf.access_count
+        )
         return True, reason
 
     def record_block(self, path: str) -> None:
