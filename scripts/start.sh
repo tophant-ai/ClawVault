@@ -22,10 +22,7 @@ fi
 echo "🛡️  Starting ClawVault"
 echo "========================"
 
-# 1. Start claw-vault
-if curl -s http://127.0.0.1:8766/api/health > /dev/null 2>&1; then
-    echo "✓ ClawVault already running"
-else
+start_claw_vault() {
     cd "$CLAW_VAULT_DIR"
     source "$VENV/bin/activate"
 
@@ -45,6 +42,62 @@ else
         echo "❌ Failed to start. Check: tail -f $LOG"
         exit 1
     fi
+}
+
+inspect_redaction_status() {
+    python3 - "$1" <<'PY'
+import json
+import sys
+
+try:
+    payload = json.loads(sys.argv[1])
+except json.JSONDecodeError:
+    print("missing\t")
+    raise SystemExit(0)
+
+info = payload.get("openclaw_session_redaction")
+if not isinstance(info, dict):
+    print("missing\t")
+    raise SystemExit(0)
+
+enabled = info.get("enabled")
+running = info.get("running")
+root = info.get("sessions_root", "")
+
+if enabled is False:
+    state = "disabled"
+elif enabled is True and running is True:
+    state = "running"
+else:
+    state = "inactive"
+
+print(f"{state}\t{root}")
+PY
+}
+
+# 1. Start claw-vault
+HEALTH_PAYLOAD="$(curl -fsS http://127.0.0.1:8766/api/health 2>/dev/null || true)"
+if [ -n "$HEALTH_PAYLOAD" ]; then
+    IFS=$'\t' read -r REDACTION_STATE REDACTION_ROOT <<< "$(inspect_redaction_status "$HEALTH_PAYLOAD")"
+    if [ "$REDACTION_STATE" = "running" ]; then
+        echo "✓ ClawVault already running"
+        echo "✓ OpenClaw transcript redaction active: ${REDACTION_ROOT:-unknown}"
+    elif [ "$REDACTION_STATE" = "disabled" ]; then
+        echo "✓ ClawVault already running"
+        echo "⚠️  OpenClaw transcript redaction is disabled in config"
+    else
+        echo "⚠️  ClawVault dashboard is reachable, but OpenClaw transcript redaction is inactive"
+        if command -v pkill > /dev/null 2>&1; then
+            pkill -f "claw-vault start" 2>/dev/null || true
+            sleep 2
+            start_claw_vault
+        else
+            echo "❌ Cannot restart existing ClawVault process automatically"
+            exit 1
+        fi
+    fi
+else
+    start_claw_vault
 fi
 
 echo ""

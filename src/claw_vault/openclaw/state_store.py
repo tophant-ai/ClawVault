@@ -1,4 +1,4 @@
-"""Persist processing offsets for OpenClaw session transcript files."""
+"""Persist processing state for OpenClaw session transcript files."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ class SessionFileState:
 
 
 class SessionStateStore:
-    """JSON-backed state store for transcript offsets."""
+    """JSON-backed state store for transcript file identity and processed boundaries."""
 
     def __init__(self, state_file: Path) -> None:
         self._state_file = state_file.expanduser()

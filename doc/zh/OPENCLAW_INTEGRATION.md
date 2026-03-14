@@ -33,6 +33,7 @@ source venv/bin/activate
 ```
 
 该脚本会：
+
 1. 验证 ClawVault 已安装
 2. 将代理环境变量注入 `openclaw-gateway.service`（systemd）
 3. 初始化 ClawVault 配置，设置 `ssl_verify: false`
@@ -87,11 +88,11 @@ openclaw
 
 ## OpenClaw 推荐安全模式
 
-| 环境 | 安全模式 | 自动脱敏 | 说明 |
-|------|---------|---------|------|
-| 开发 | `permissive` | 关 | 仅记录日志，不干预 |
-| 预发布 | `interactive` | 开 | 自动脱敏敏感信息，对用户透明 |
-| 生产 | `strict` | — | 拦截所有威胁 |
+| 环境   | 安全模式      | 自动脱敏 | 说明                         |
+| ------ | ------------- | -------- | ---------------------------- |
+| 开发   | `permissive`  | 关       | 仅记录日志，不干预           |
+| 预发布 | `interactive` | 开       | 自动脱敏敏感信息，对用户透明 |
+| 生产   | `strict`      | —        | 拦截所有威胁                 |
 
 通过仪表盘 Config 页面或 API 切换：
 
@@ -128,11 +129,20 @@ proxy:
 **SSL/TLS 错误**：在配置中设置 `ssl_verify: false`，并在 OpenClaw 环境中设置 `NODE_TLS_REJECT_UNAUTHORIZED=0`。
 
 **代理不可达**：确认 ClawVault 正在运行：
+
 ```bash
 curl -s http://127.0.0.1:8766/api/health
 ```
 
+健康检查结果现在包含 `openclaw_session_redaction.enabled`、
+`openclaw_session_redaction.running`、`openclaw_session_redaction.watch_roots`
+和 `openclaw_session_redaction.last_watch_error`。
+如果你希望 transcript 清理生效，`enabled` 和 `running` 都必须为 `true`。
+另外 `watch_roots` 必须覆盖 OpenClaw 实际写入 transcript 的根目录，尤其是
+OpenClaw 跑在 `/root` 或其他 home 目录下时。
+
 **配置变更后重启 OpenClaw**：
+
 ```bash
 systemctl --user restart openclaw-gateway
 ```

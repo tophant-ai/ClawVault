@@ -89,9 +89,33 @@ async def test_update_detection_config_persists_extended_categories(
 class _DummyOpenClawService:
     def __init__(self) -> None:
         self.enabled_updates: list[bool] = []
+        self.running = True
+        self.sessions_root = "/tmp/openclaw-agents"
+        self.watch_roots = ("/tmp/openclaw-agents", "/root/.openclaw/agents")
+        self.last_watch_error = "watch loop failed"
 
     def set_enabled(self, enabled: bool) -> None:
         self.enabled_updates.append(enabled)
+
+
+@pytest.mark.asyncio
+async def test_health_exposes_openclaw_runtime_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings()
+    settings.openclaw.session_redaction.enabled = False
+    service = _DummyOpenClawService()
+    monkeypatch.setattr(dashboard_api, "_settings", settings)
+    monkeypatch.setattr(dashboard_api, "_openclaw_service", service)
+
+    result = await dashboard_api.health()
+
+    assert result["status"] == "ok"
+    assert result["openclaw_session_redaction"] == {
+        "enabled": False,
+        "running": True,
+        "sessions_root": "/tmp/openclaw-agents",
+        "watch_roots": ["/tmp/openclaw-agents", "/root/.openclaw/agents"],
+        "last_watch_error": "watch loop failed",
+    }
 
 
 @pytest.mark.asyncio
@@ -112,6 +136,10 @@ async def test_update_openclaw_session_redaction_config_updates_runtime_service(
     assert settings.openclaw.session_redaction.enabled is True
     assert service.enabled_updates == [True]
     assert result["enabled"] is True
+    assert result["running"] is True
+    assert result["sessions_root"] == "/tmp/openclaw-agents"
+    assert result["watch_roots"] == ["/tmp/openclaw-agents", "/root/.openclaw/agents"]
+    assert result["last_watch_error"] == "watch loop failed"
 
 
 def test_persist_config_writes_safe_yaml_for_path_values(

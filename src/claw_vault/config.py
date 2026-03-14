@@ -80,6 +80,8 @@ class CloudConfig(BaseModel):
 class OpenClawSessionRedactionConfig(BaseModel):
     enabled: bool = True
     sessions_root: Path = Path.home() / ".openclaw" / "agents"
+    additional_sessions_roots: list[Path] = Field(default_factory=list)
+    auto_discover_sessions_roots: bool = True
     state_file: Path = DEFAULT_CONFIG_DIR / "state" / "openclaw_session_redactor.json"
     lock_timeout_ms: int = 3000
     watch_debounce_ms: int = 250

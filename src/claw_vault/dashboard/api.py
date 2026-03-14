@@ -220,7 +220,39 @@ class RulesPayload(BaseModel):
 
 @router.get("/health")
 async def health():
-    return {"status": "ok", "version": "0.1.0"}
+    openclaw_session_redaction = {
+        "enabled": True,
+        "running": False,
+        "sessions_root": str(Path.home() / ".openclaw" / "agents"),
+        "watch_roots": [str(Path.home() / ".openclaw" / "agents")],
+        "last_watch_error": None,
+    }
+    if _settings:
+        openclaw_session_redaction["enabled"] = _settings.openclaw.session_redaction.enabled
+        openclaw_session_redaction["sessions_root"] = str(
+            _settings.openclaw.session_redaction.sessions_root
+        )
+        openclaw_session_redaction["watch_roots"] = [
+            str(_settings.openclaw.session_redaction.sessions_root),
+            *[str(path) for path in _settings.openclaw.session_redaction.additional_sessions_roots],
+        ]
+    if _openclaw_service:
+        openclaw_session_redaction["running"] = bool(getattr(_openclaw_service, "running", False))
+        service_root = getattr(_openclaw_service, "sessions_root", None)
+        if service_root is not None:
+            openclaw_session_redaction["sessions_root"] = str(service_root)
+        watch_roots = getattr(_openclaw_service, "watch_roots", None)
+        if watch_roots is not None:
+            openclaw_session_redaction["watch_roots"] = [str(path) for path in watch_roots]
+        openclaw_session_redaction["last_watch_error"] = getattr(
+            _openclaw_service, "last_watch_error", None
+        )
+
+    return {
+        "status": "ok",
+        "version": "0.1.0",
+        "openclaw_session_redaction": openclaw_session_redaction,
+    }
 
 
 @router.get("/summary")
@@ -583,16 +615,34 @@ async def update_guard_config(config: dict):
 async def get_openclaw_session_redaction_config():
     """Get current OpenClaw session transcript redaction settings."""
     if _settings:
-        return _settings.openclaw.session_redaction.model_dump(mode="json")
-    return {
-        "enabled": True,
-        "sessions_root": str(Path.home() / ".openclaw" / "agents"),
-        "state_file": str(Path.home() / ".ClawVault" / "state" / "openclaw_session_redactor.json"),
-        "lock_timeout_ms": 3000,
-        "watch_debounce_ms": 250,
-        "watch_step_ms": 50,
-        "processing_retries": 3,
-    }
+        payload = _settings.openclaw.session_redaction.model_dump(mode="json")
+    else:
+        payload = {
+            "enabled": True,
+            "sessions_root": str(Path.home() / ".openclaw" / "agents"),
+            "additional_sessions_roots": [],
+            "auto_discover_sessions_roots": True,
+            "state_file": str(
+                Path.home() / ".ClawVault" / "state" / "openclaw_session_redactor.json"
+            ),
+            "lock_timeout_ms": 3000,
+            "watch_debounce_ms": 250,
+            "watch_step_ms": 50,
+            "processing_retries": 3,
+        }
+
+    payload["running"] = bool(getattr(_openclaw_service, "running", False))
+    payload["watch_roots"] = [str(payload["sessions_root"])] + [
+        str(path) for path in payload.get("additional_sessions_roots", [])
+    ]
+    payload["last_watch_error"] = getattr(_openclaw_service, "last_watch_error", None)
+    service_root = getattr(_openclaw_service, "sessions_root", None)
+    if service_root is not None:
+        payload["sessions_root"] = str(service_root)
+    watch_roots = getattr(_openclaw_service, "watch_roots", None)
+    if watch_roots is not None:
+        payload["watch_roots"] = [str(path) for path in watch_roots]
+    return payload
 
 
 @router.post("/config/openclaw/session-redaction")
