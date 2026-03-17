@@ -13,7 +13,7 @@
 
 ```bash
 ssh root@<server-ip>
-cd ~/prj/claw-vault
+cd ~/prj/clawvault
 source venv/bin/activate
 
 # Configure OpenClaw proxy integration
@@ -30,7 +30,7 @@ source venv/bin/activate
 Services:
 - **Proxy**: `http://127.0.0.1:8765`
 - **Dashboard**: `http://<server-ip>:8766`
-- **Log**: `/tmp/claw-vault.log`
+- **Log**: `/tmp/clawvault.log`
 
 ## 4. Test
 
@@ -68,12 +68,12 @@ Or test in the Dashboard web UI: go to the **Test** tab and click any test case.
 ## CLI Commands
 
 ```bash
-claw-vault --version          # Version
-claw-vault start              # Start proxy + dashboard
-claw-vault scan "text"        # Scan text for threats
-claw-vault demo               # Interactive demo
-claw-vault config show        # Show config
-claw-vault skill list         # List skills
+clawvault --version          # Version
+clawvault start              # Start proxy + dashboard
+clawvault scan "text"        # Scan text for threats
+clawvault demo               # Interactive demo
+clawvault config show        # Show config
+clawvault skill list         # List skills
 ```
 
 ## Troubleshooting

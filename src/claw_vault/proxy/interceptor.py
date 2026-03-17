@@ -361,12 +361,12 @@ class ClawVaultAddon:
         assistant message in the TUI chat interface."""
         try:
             data = json.loads(request_body)
-            model = data.get("model", "claw-vault")
+            model = data.get("model", "clawvault")
         except Exception:
-            model = "claw-vault"
+            model = "clawvault"
 
         resp_body = {
-            "id": f"claw-vault-{uuid.uuid4().hex[:8]}",
+            "id": f"clawvault-{uuid.uuid4().hex[:8]}",
             "object": "chat.completion",
             "model": model,
             "choices": [

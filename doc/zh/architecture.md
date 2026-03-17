@@ -48,7 +48,7 @@
 ## 模块结构
 
 ```
-claw-vault/
+clawvault/
 ├── src/claw_vault/
 │   ├── __init__.py           # 版本信息
 │   ├── __main__.py           # 入口：python -m claw_vault

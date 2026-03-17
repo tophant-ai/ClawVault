@@ -27,11 +27,11 @@
 
 ```bash
 ssh root@<服务器IP>
-cd ~/prj/claw-vault
+cd ~/prj/clawvault
 source venv/bin/activate
 
 # 初始化配置（创建 ~/.ClawVault/config.yaml）
-claw-vault config init
+clawvault config init
 ```
 
 ### 推荐的生产配置
@@ -68,7 +68,7 @@ dashboard:
 启动后的服务：
 - **代理**: `http://127.0.0.1:8765`
 - **仪表盘**: `http://127.0.0.1:8766`
-- **日志**: `/tmp/claw-vault.log`
+- **日志**: `/tmp/clawvault.log`
 
 ## 远程访问仪表盘
 
@@ -130,5 +130,5 @@ pip install -e .
 
 **查看日志**：
 ```bash
-tail -f /tmp/claw-vault.log
+tail -f /tmp/clawvault.log
 ```

@@ -22,10 +22,17 @@ def version_callback(value: bool):
         console.print(f"ClawVault v{__version__}")
         raise typer.Exit()
 
+
+def help_callback(value: bool):
+    """Show help and exit."""
+    if value:
+        raise typer.Exit(code=0)
+
 app = typer.Typer(
-    name="claw-vault",
+    name="clawvault",
     help="🛡️ ClawVault: Physical-level memory isolation vault for AI credentials",
     no_args_is_help=True,
+    add_help_option=True,
 )
 console = Console()
 
@@ -38,6 +45,14 @@ def main(
         callback=version_callback,
         is_eager=True,
         help="Show version and exit",
+    ),
+    help: bool = typer.Option(
+        None,
+        "--help",
+        "-h",
+        callback=help_callback,
+        is_eager=True,
+        help="Show help and exit",
     ),
 ):
     """ClawVault CLI."""
@@ -210,7 +225,7 @@ def vault_discover():
     console.print(f"\n[green]Found {len(discovered)} sensitive files:[/green]\n")
     for path in discovered:
         console.print(f"  📄 {path}")
-    console.print(f"\nUse [bold]claw-vault vault-add <path>[/bold] to protect these files.")
+    console.print(f"\nUse [bold]clawvault vault-add <path>[/bold] to protect these files.")
 
 
 @app.command()
@@ -251,13 +266,71 @@ def demo():
         else:
             console.print("  [green]✓ Clean[/green]\n")
 
-    console.print("[bold green]Demo complete![/bold green] Run [bold]claw-vault start[/bold] to enable protection.")
+    console.print("[bold green]Demo complete![/bold green] Run [bold]clawvault start[/bold] to enable protection.")
 
 
 @app.command()
 def version():
     """Show version information."""
     console.print(f"ClawVault v{__version__}")
+
+
+@app.command()
+def status(
+    proxy_port: int = typer.Option(8765, "--proxy-port", help="Proxy port to check"),
+    dashboard_port: int = typer.Option(8766, "--dashboard-port", help="Dashboard port to check"),
+    dashboard_host: str = typer.Option("127.0.0.1", "--dashboard-host", help="Dashboard host to check"),
+    json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
+):
+    """Check if ClawVault servers are running."""
+    import json
+    import socket
+
+    status_result = {
+        "proxy": {"port": proxy_port, "running": False},
+        "dashboard": {"port": dashboard_port, "host": dashboard_host, "running": False},
+    }
+
+    # Check proxy port
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex(("127.0.0.1", proxy_port))
+        sock.close()
+        status_result["proxy"]["running"] = (result == 0)
+    except Exception:
+        pass
+
+    # Check dashboard port
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex((dashboard_host, dashboard_port))
+        sock.close()
+        status_result["dashboard"]["running"] = (result == 0)
+    except Exception:
+        pass
+
+    if json_output:
+        console.print(json.dumps(status_result, indent=2))
+    else:
+        console.print("\n[bold]ClawVault Status[/bold]\n")
+
+        # Proxy status
+        proxy_status = "[green]● Running[/green]" if status_result["proxy"]["running"] else "[red]● Stopped[/red]"
+        console.print(f"Proxy  : {proxy_status} (port {status_result['proxy']['port']})")
+
+        # Dashboard status
+        dash_status = "[green]● Running[/green]" if status_result["dashboard"]["running"] else "[red]● Stopped[/red]"
+        console.print(f"Dashboard: {dash_status} (http://{status_result['dashboard']['host']}:{status_result['dashboard']['port']})")
+
+        console.print()
+
+        if status_result["proxy"]["running"] or status_result["dashboard"]["running"]:
+            console.print("[green]✓ ClawVault is active[/green]")
+        else:
+            console.print("[yellow]○ ClawVault is not running[/yellow]")
+            console.print("Run [bold]clawvault start[/bold] to start the servers.")
 
 
 # ── Config subcommands ──────────────────────────────────────────

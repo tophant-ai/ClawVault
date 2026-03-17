@@ -123,7 +123,7 @@
 
 - **一键脚本 / 服务器侧 E2E**:
   - 使用 `./scripts/test.sh`：
-    - 确保 `claw-vault start` 已启动代理与 Dashboard。
+    - 确保 `clawvault start` 已启动代理与 Dashboard。
     - 脚本会：
       - 调用 `GET /api/config/rules` 确认规则 API 正常；
       - 发送 `POST /api/config/rules` 安装临时 `"block-injections"` 规则；
@@ -137,7 +137,7 @@
    ```
 2. 启动服务（在服务器或本地）：
    ```bash
-   claw-vault start
+   clawvault start
    ```
 3. 跑一键脚本：
    ```bash

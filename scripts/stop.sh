@@ -7,13 +7,13 @@ SERVICE_FILE="$HOME/.config/systemd/user/openclaw-gateway.service"
 echo "🛑 Stopping ClawVault"
 echo "========================"
 
-# 1. Stop claw-vault
-PIDS=$(pgrep -f "claw-vault start" 2>/dev/null || true)
+# 1. Stop clawvault
+PIDS=$(pgrep -f "clawvault start" 2>/dev/null || true)
 if [ -n "$PIDS" ]; then
     kill $PIDS 2>/dev/null || true
     sleep 2
     # Force kill if still running
-    pgrep -f "claw-vault start" > /dev/null 2>&1 && kill -9 $(pgrep -f "claw-vault start") 2>/dev/null
+    pgrep -f "clawvault start" > /dev/null 2>&1 && kill -9 $(pgrep -f "clawvault start") 2>/dev/null
     echo "✓ ClawVault stopped"
 else
     echo "✓ ClawVault not running"

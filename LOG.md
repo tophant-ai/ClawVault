@@ -509,6 +509,239 @@ All changes maintain backward compatibility with existing YAML-based rule manage
 
 ---
 
+# ClawVault Installer Skill for OpenClaw - 2026-03-17
+
+## Summary
+- Implemented comprehensive ClawVault Installer Skill for OpenClaw integration
+- Enables AI-guided installation, configuration, and management of ClawVault
+- Provides both built-in Skill module and standalone script for ClawHub distribution
+
+## Features Implemented
+
+### 1. Core Skill Module
+**File**: `src/claw_vault/skills/clawvault_installer.py`
+
+**Capabilities**:
+- **install_clawvault**: Multi-mode installation (quick/standard/advanced) with intelligent fallback
+- **check_health**: Comprehensive health check of installation, services, and configuration
+- **configure**: Dynamic configuration management with YAML support
+- **generate_rule**: Natural language to security rule generation with scenario templates
+- **test_detection**: Built-in test suite for detection capabilities
+- **get_status**: Real-time status and statistics monitoring
+- **uninstall**: Clean uninstallation with optional config preservation
+
+**Technical Highlights**:
+- Intelligent multi-source installation (PyPI → GitHub → local)
+- Automatic prerequisite checking (Python 3.10+, pip)
+- Service health monitoring (proxy port 8765, dashboard port 8766)
+- Deep merge configuration updates
+- Integration with ClawVault rule generation API
+
+### 2. Standalone Script
+**File**: `scripts/skills/clawvault_manager.py`
+
+**Purpose**: Independent distribution to ClawHub without requiring ClawVault pre-installation
+
+**Features**:
+- Complete CLI interface with subcommands
+- JSON output support for programmatic use
+- Identical functionality to built-in Skill
+- Self-contained with minimal dependencies
+
+**Commands**:
+- `install --mode [quick|standard|advanced]`
+- `health` - Health check
+- `generate-rule <policy>` - Rule generation
+- `status` - Service status
+- `test --category [all|sensitive|injection|commands]`
+- `uninstall --keep-config` - Clean removal
+
+### 3. Security Scenario Templates
+
+**Pre-defined Scenarios**:
+1. **customer_service**: PII detection + auto-sanitization for support
+2. **development**: API key protection + dangerous command detection
+3. **production**: Strict mode with high-risk blocking
+4. **finance**: Financial compliance + comprehensive PII detection
+
+Each scenario includes:
+- Natural language policy description
+- Recommended configuration settings
+- Detection rule specifications
+
+### 4. Skill Registration
+
+**File**: `src/claw_vault/skills/registry.py`
+
+**Changes**:
+- Added `ClawVaultInstallerSkill` to builtin skills registry
+- Automatically loaded when `register_builtins()` is called
+- Available as `clawvault_installer` skill name
+
+### 5. Documentation
+
+**English Documentation**: `doc/SKILL_CLAWVAULT_INSTALLER.md`
+**Chinese Documentation**: `doc/zh/SKILL_CLAWVAULT_INSTALLER.md`
+
+**Content**:
+- Complete usage guide for OpenClaw integration
+- All 7 tools with parameters and examples
+- Standalone script CLI reference
+- Security scenario templates explanation
+- Error handling and troubleshooting
+- Best practices and examples
+- ClawHub publishing guide
+
+## Usage Examples
+
+### In OpenClaw
+
+```
+User: "安装 ClawVault"
+AI: [Calls clawvault_installer__install_clawvault(mode="quick")]
+
+User: "使用 ClawVault 生成检测数据库密码规则"
+AI: [Calls clawvault_installer__generate_rule(
+      policy="检测并拦截所有数据库连接字符串和密码",
+      apply=true
+    )]
+
+User: "检查 ClawVault 状态"
+AI: [Calls clawvault_installer__check_health()]
+```
+
+### Standalone Script
+
+```bash
+# Quick installation
+python clawvault_manager.py install --mode quick
+
+# Generate rule from scenario
+python clawvault_manager.py generate-rule --scenario customer_service --apply
+
+# Run tests
+python clawvault_manager.py test --category all
+
+# Check status
+python clawvault_manager.py status
+```
+
+## Technical Implementation
+
+### Installation Strategy
+1. **Prerequisite Check**: Python version, pip availability, network connectivity
+2. **Multi-source Install**: Try PyPI first, fallback to GitHub on failure
+3. **Config Initialization**: Generate YAML config with mode-specific defaults
+4. **Health Verification**: Automatic post-install health check
+5. **Integration Setup**: Configure OpenClaw proxy settings (if applicable)
+
+### Configuration Management
+- YAML-based configuration in `~/.ClawVault/config.yaml`
+- Deep merge for partial updates
+- Validation before applying changes
+- Mode-specific defaults (quick/standard/advanced)
+
+### Rule Generation
+- Integrates with ClawVault `/api/rules/generate` endpoint
+- Supports natural language policy descriptions
+- Pre-defined scenario templates for common use cases
+- Automatic rule validation and application
+- Returns explanation and warnings
+
+### Testing Framework
+- Built-in test cases for all detection categories
+- Tests cover: API keys, credit cards, emails, injections, dangerous commands
+- Uses ClawVault detection engine directly
+- Detailed results with risk scores
+
+## Files Created/Modified
+
+**New Files**:
+- `src/claw_vault/skills/clawvault_installer.py` (850+ lines)
+- `scripts/skills/clawvault_manager.py` (600+ lines)
+- `doc/SKILL_CLAWVAULT_INSTALLER.md` (comprehensive guide)
+- `doc/zh/SKILL_CLAWVAULT_INSTALLER.md` (Chinese guide)
+
+**Modified Files**:
+- `src/claw_vault/skills/registry.py` - Added ClawVaultInstallerSkill registration
+
+## Integration Points
+
+### With OpenClaw
+- Automatic proxy environment variable configuration
+- Systemd service modification (if available)
+- Integration verification
+- AI-guided installation workflow
+
+### With ClawVault
+- Uses ClawVault detection engine for tests
+- Integrates with rule generation API
+- Monitors dashboard and proxy services
+- Manages configuration files
+
+## Publishing to ClawHub
+
+**Package Structure**:
+```
+clawvault-installer-skill/
+├── clawvault_manager.py
+├── skill.json
+└── README.md
+```
+
+**Metadata** (`skill.json`):
+- Name: clawvault-installer
+- Version: 1.0.0
+- Permissions: execute_command, write_files, read_files, network
+- Tags: security, installation, clawvault
+
+## Benefits
+
+1. **User Experience**: AI-guided installation eliminates manual setup complexity
+2. **Flexibility**: Three installation modes for different user needs
+3. **Automation**: One-command installation with automatic configuration
+4. **Testing**: Built-in tests verify installation success
+5. **Management**: Complete lifecycle management from install to uninstall
+6. **Distribution**: Standalone script enables ClawHub distribution
+7. **Scenarios**: Pre-defined templates for common security use cases
+
+## Future Enhancements
+
+Potential improvements:
+- Additional scenario templates (e-commerce, healthcare, education)
+- Interactive configuration wizard for advanced mode
+- Backup/restore configuration functionality
+- Migration tools for version upgrades
+- Integration with more AI platforms beyond OpenClaw
+
+---
+
+# Logo Loading Fix - 2026-03-17
+
+## Summary
+- Fixed logo loading issue in dashboard by correcting static file path.
+
+## Issues Fixed
+
+### Logo Not Loading in Dashboard
+**Problem**: ClawVault logo was not loading in the dashboard sidebar, showing a placeholder icon instead.
+
+**Root Cause**: The logo image was referenced as `src="Icon.png"` but static files are mounted at `/static/` path in FastAPI.
+
+**Solution**: 
+- Changed image source from `src="Icon.png"` to `src="/static/Icon.png"` in the HTML
+- This ensures the logo loads correctly through the FastAPI static file mounting
+
+**Files Modified**:
+- `src/claw_vault/dashboard/static/index.html` - Fixed logo path on line 48
+
+## Impact
+- Logo now displays correctly in the dashboard sidebar
+- Improves visual branding and user experience
+- No functional changes to the application
+
+---
+
 # Dashboard Icon Update - 2026-03-13
 
 ## Summary

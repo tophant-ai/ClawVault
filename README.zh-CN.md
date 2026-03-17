@@ -80,13 +80,13 @@
 pip install -e .
 
 # 启动（代理 + 仪表盘）
-claw-vault start
+clawvault start
 
 # 扫描文本
-claw-vault scan "password=MySecret key=sk-proj-abc123"
+clawvault scan "password=MySecret key=sk-proj-abc123"
 
 # 交互式演示
-claw-vault demo
+clawvault demo
 ```
 
 ## 🚀 部署到服务器

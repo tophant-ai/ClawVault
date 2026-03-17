@@ -78,13 +78,13 @@ The vault includes a **transparent proxy gateway module** that intercepts traffi
 pip install -e .
 
 # Start (proxy + dashboard)
-claw-vault start
+clawvault start
 
 # Scan text
-claw-vault scan "password=MySecret key=sk-proj-abc123"
+clawvault scan "password=MySecret key=sk-proj-abc123"
 
 # Interactive demo
-claw-vault demo
+clawvault demo
 ```
 
 ## 🚀 Deploy to Server

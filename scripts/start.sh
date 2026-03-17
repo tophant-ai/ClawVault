@@ -5,7 +5,7 @@
 set -e
 
 CLAW_VAULT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LOG="/tmp/claw-vault.log"
+LOG="/tmp/clawvault.log"
 SERVICE_FILE="$HOME/.config/systemd/user/openclaw-gateway.service"
 
 # Find venv
@@ -22,7 +22,7 @@ fi
 echo "🛡️  Starting ClawVault"
 echo "========================"
 
-# 1. Start claw-vault
+# 1. Start clawvault
 if curl -s http://127.0.0.1:8766/api/health > /dev/null 2>&1; then
     echo "✓ ClawVault already running"
 else
@@ -36,7 +36,7 @@ else
         sed -i '' 's/ssl_verify: true/ssl_verify: false/' "$CONF"
     fi
 
-    nohup claw-vault start --dashboard-host 0.0.0.0 > "$LOG" 2>&1 &
+    nohup clawvault start --dashboard-host 0.0.0.0 > "$LOG" 2>&1 &
     sleep 3
 
     if curl -s http://127.0.0.1:8766/api/health > /dev/null 2>&1; then

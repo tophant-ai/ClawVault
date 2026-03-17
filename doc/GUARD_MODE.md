@@ -57,7 +57,7 @@ ClawVault provides three guard modes. Switch them in real-time via the Dashboard
 
 ```json
 {
-  "id": "claw-vault-xxxx",
+  "id": "clawvault-xxxx",
   "object": "chat.completion",
   "choices": [{
     "message": {

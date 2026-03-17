@@ -48,7 +48,7 @@
 ## Module Structure
 
 ```
-claw-vault/
+clawvault/
 ├── src/claw_vault/
 │   ├── __init__.py           # Version info
 │   ├── __main__.py           # Entry: python -m claw_vault

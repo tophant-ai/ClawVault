@@ -20,9 +20,9 @@ pip install -e ".[dev]"
 ## Verify
 
 ```bash
-claw-vault --version
-claw-vault demo           # Interactive detection demo
-claw-vault scan "sk-proj-abc123 password=secret 192.168.1.1"
+clawvault --version
+clawvault demo           # Interactive detection demo
+clawvault scan "sk-proj-abc123 password=secret 192.168.1.1"
 ```
 
 ## Run Tests
@@ -35,7 +35,7 @@ pytest --cov               # With coverage
 ## Start Services (Local)
 
 ```bash
-claw-vault start           # Proxy :8765 + Dashboard :8766
+clawvault start           # Proxy :8765 + Dashboard :8766
 ```
 
 - **Proxy**: `http://127.0.0.1:8765`
@@ -44,15 +44,15 @@ claw-vault start           # Proxy :8765 + Dashboard :8766
 Default guard mode is `permissive` (pass-through + logging). Change via Dashboard Config tab or:
 
 ```bash
-claw-vault start --mode interactive
+clawvault start --mode interactive
 ```
 
 ## Configuration
 
 ```bash
-claw-vault config init     # Create ~/.ClawVault/config.yaml from template
-claw-vault config show     # Show current settings
-claw-vault config path     # Show config file location
+clawvault config init     # Create ~/.ClawVault/config.yaml from template
+clawvault config show     # Show current settings
+clawvault config path     # Show config file location
 ```
 
 Edit `~/.ClawVault/config.yaml` to customize. See [`config.example.yaml`](../config.example.yaml) for all options.
@@ -68,8 +68,8 @@ mypy src/                  # Type check
 ## CLI Reference
 
 ```bash
-claw-vault --help          # All commands
-claw-vault start --help    # Start options
-claw-vault scan --help     # Scan options
-claw-vault skill list      # List available skills
-claw-vault skill export    # Export skills as OpenAI function-calling JSON
+clawvault --help          # All commands
+clawvault start --help    # Start options
+clawvault scan --help     # Scan options
+clawvault skill list      # List available skills
+clawvault skill export    # Export skills as OpenAI function-calling JSON

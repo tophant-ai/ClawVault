@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ClawVault"
+name = "clawvault"
 version = "0.1.0"
-description = "Physical-level memory isolation vault for AI credentials - Your AI's zero-trust safe"
+description = "Atomic \"claw\" control: every AI reach, within your sight."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -47,7 +47,7 @@ dev = [
 ]
 
 [project.scripts]
-claw-vault = "claw_vault.cli:app"
+clawvault = "claw_vault.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/tophant-ai/ClawVault"

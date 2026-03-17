@@ -27,7 +27,7 @@ ClawVault runs as a transparent HTTP proxy. By setting `HTTP_PROXY` / `HTTPS_PRO
 The `setup.sh` script configures everything automatically:
 
 ```bash
-cd ~/prj/claw-vault
+cd ~/prj/clawvault
 source venv/bin/activate
 ./scripts/setup.sh
 ```
@@ -54,9 +54,9 @@ If you prefer manual configuration or don't use systemd:
 ### 1. Start ClawVault
 
 ```bash
-cd ~/prj/claw-vault
+cd ~/prj/clawvault
 source venv/bin/activate
-claw-vault start --dashboard-host 0.0.0.0
+clawvault start --dashboard-host 0.0.0.0
 ```
 
 ### 2. Set Proxy Environment Variables
@@ -406,12 +406,12 @@ curl -X POST http://localhost:8766/api/rules/generate \
 
 **Rule not generating:**
 - Ensure `OPENAI_API_KEY` is set in ClawVault environment
-- Check ClawVault logs: `journalctl --user -u claw-vault -f`
+- Check ClawVault logs: `journalctl --user -u clawvault -f`
 
 **Rule not taking effect:**
 - Verify rule is enabled: `enabled: true`
 - Check rule order in `~/.ClawVault/rules.yaml`
-- Restart ClawVault: `systemctl --user restart claw-vault`
+- Restart ClawVault: `systemctl --user restart clawvault`
 
 **False positives:**
 - Adjust `min_risk_score` threshold

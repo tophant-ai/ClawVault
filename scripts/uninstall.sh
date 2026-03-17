@@ -15,7 +15,7 @@ echo ""
 echo "[1/3] Stopping services..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ -f "$SCRIPT_DIR/stop.sh" ] && bash "$SCRIPT_DIR/stop.sh" 2>/dev/null || {
-    pkill -f "claw-vault start" 2>/dev/null || true
+    pkill -f "clawvault start" 2>/dev/null || true
     pkill -f "gost.*1080" 2>/dev/null || true
 }
 echo ""
@@ -47,8 +47,8 @@ if [ "$KEEP_CONFIG" = false ] && [ -f "${SERVICE_FILE}.bak" ]; then
     echo "  ✓ Restored original service file from backup"
 fi
 
-# 3. Clean claw-vault config
-echo "[3/3] Cleaning claw-vault config..."
+# 3. Clean clawvault config
+echo "[3/3] Cleaning clawvault config..."
 if [ "$KEEP_CONFIG" = true ]; then
     echo "  ✓ Keeping config (--keep-config)"
 else

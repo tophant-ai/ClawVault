@@ -38,7 +38,7 @@ class SecurityReportSkill(BaseSkill):
                 SkillPermission.READ_CHAT,
             ],
             tags=["security", "reporting", "monitoring", "tokens", "cost"],
-            homepage="https://github.com/tophant-ai/claw-vault",
+            homepage="https://github.com/tophant-ai/clawvault",
         )
 
     @tool(

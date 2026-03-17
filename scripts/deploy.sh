@@ -6,9 +6,9 @@ set -e
 
 SERVER_IP="$1"
 SERVER_USER="${2:-root}"
-SERVER_PATH="/root/prj/claw-vault"
+SERVER_PATH="/root/prj/ClawVault"
 VENV_PATH="$SERVER_PATH/venv"
-ARCHIVE_NAME="claw-vault.zip"
+ARCHIVE_NAME="clawvault.zip"
 
 if [ -z "$SERVER_IP" ]; then
     echo "Error: Please provide server IP address"
@@ -28,26 +28,27 @@ echo ""
 # Steps 1-4: Package and upload
 echo "[1/6] Cleaning old package files..."
 rm -f "$ARCHIVE_NAME"
-rm -rf claw-vault-deploy
+rm -rf clawvault-deploy
 
 echo "[2/6] Preparing project files..."
-mkdir -p claw-vault-deploy
-cp -r src claw-vault-deploy/
-cp -r tests claw-vault-deploy/
-cp -r doc claw-vault-deploy/
-cp -r scripts claw-vault-deploy/
-chmod +x claw-vault-deploy/scripts/*.sh 2>/dev/null || true
-cp pyproject.toml claw-vault-deploy/
-cp README.md claw-vault-deploy/
-cp LICENSE claw-vault-deploy/
-cp config.example.yaml claw-vault-deploy/
-[ -f .gitignore ] && cp .gitignore claw-vault-deploy/
+mkdir -p clawvault-deploy
+cp -r src clawvault-deploy/
+cp -r tests clawvault-deploy/
+cp -r doc clawvault-deploy/
+cp -r scripts clawvault-deploy/
+chmod +x clawvault-deploy/scripts/*.sh 2>/dev/null || true
+cp pyproject.toml clawvault-deploy/
+cp install.sh clawvault-deploy/
+cp README.md clawvault-deploy/
+cp LICENSE clawvault-deploy/
+cp config.example.yaml clawvault-deploy/
+[ -f .gitignore ] && cp .gitignore clawvault-deploy/
 
-find claw-vault-deploy -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-find claw-vault-deploy -name "*.pyc" -delete 2>/dev/null || true
+find clawvault-deploy -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+find clawvault-deploy -name "*.pyc" -delete 2>/dev/null || true
 
 echo "[3/6] Packaging project..."
-cd claw-vault-deploy && zip -r "../$ARCHIVE_NAME" . -x "*.DS_Store" -x "__MACOSX/*" && cd ..
+cd clawvault-deploy && zip -r "../$ARCHIVE_NAME" . -x "*.DS_Store" -x "__MACOSX/*" && cd ..
 
 echo "[4/6] Uploading to server..."
 scp "$ARCHIVE_NAME" "$SERVER_USER@$SERVER_IP:/tmp/"
@@ -67,7 +68,7 @@ ENDSSH
 echo "[6/6] Installing on server..."
 ssh "$SERVER_USER@$SERVER_IP" << 'ENDSSH'
 set -e
-cd /root/prj/claw-vault
+cd /root/prj/ClawVault
 
 echo "→ Checking Python version..."
 python3 --version
@@ -119,22 +120,22 @@ echo "→ Installing ClawVault (dev mode)..."
 pip install -e . -q
 
 echo "→ Verifying installation..."
-claw-vault --version
+clawvault --version
 
 echo ""
 echo "✅ Installation complete!"
 echo ""
 echo "Available commands:"
-echo "  claw-vault --version"
-echo "  claw-vault scan 'test text'"
-echo "  claw-vault demo"
-echo "  claw-vault start"
+echo "  clawvault --version"
+echo "  clawvault scan 'test text'"
+echo "  clawvault demo"
+echo "  clawvault start"
 ENDSSH
 
 # Clean up local temp files
 echo ""
 echo "[Cleanup] Removing local temp files..."
-rm -rf claw-vault-deploy
+rm -rf clawvault-deploy
 rm -f "$ARCHIVE_NAME"
 
 echo ""
@@ -146,7 +147,7 @@ echo "Login to server and test:"
 echo "  ssh $SERVER_USER@$SERVER_IP"
 echo "  cd $SERVER_PATH"
 echo "  source venv/bin/activate"
-echo "  claw-vault --version"
+echo "  clawvault --version"
 echo ""
 echo "Run quick test:"
 echo "  ./scripts/test.sh"

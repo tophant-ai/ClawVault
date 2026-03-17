@@ -9,7 +9,7 @@
 export OPENAI_API_KEY="sk-your-api-key"
 
 # 启动 ClawVault
-cd /root/prj/claw-vault
+cd /root/prj/clawvault
 ./scripts/start.sh
 ```
 
@@ -28,7 +28,7 @@ curl -X POST http://localhost:8766/api/rules/generate \
 **方式二：使用 OpenClaw Skill**
 
 ```bash
-cd /root/prj/claw-vault/examples
+cd /root/prj/clawvault/examples
 python openclaw-skill-generate-rule.py "阻止所有包含 AWS 凭证的请求"
 ```
 
@@ -131,7 +131,7 @@ echo 'export OPENAI_API_KEY="sk-your-api-key"' >> ~/.bashrc
 source ~/.bashrc
 
 # 4. 启动服务
-cd /root/prj/claw-vault
+cd /root/prj/clawvault
 ./scripts/start.sh
 
 # 5. 测试生成规则
@@ -207,7 +207,7 @@ curl https://api.openai.com/v1/models \
   -H "Authorization: Bearer $OPENAI_API_KEY"
 
 # 3. 查看 ClawVault 日志
-journalctl --user -u claw-vault -f
+journalctl --user -u clawvault -f
 ```
 
 ### 问题：规则不生效
@@ -221,7 +221,7 @@ cat ~/.ClawVault/rules.yaml
 # enabled: true
 
 # 3. 重启 ClawVault
-systemctl --user restart claw-vault
+systemctl --user restart clawvault
 ```
 
 ### 问题：无法连接到服务器
@@ -247,7 +247,7 @@ firewall-cmd --list-ports
 
 ## 技术支持
 
-- 文档: `/root/prj/claw-vault/doc/`
-- 示例: `/root/prj/claw-vault/examples/`
-- 日志: `journalctl --user -u claw-vault -f`
+- 文档: `/root/prj/clawvault/doc/`
+- 示例: `/root/prj/clawvault/examples/`
+- 日志: `journalctl --user -u clawvault -f`
 - Dashboard: `http://<server-ip>:8766`

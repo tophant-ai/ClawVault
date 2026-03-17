@@ -27,7 +27,7 @@ ClawVault 作为透明 HTTP 代理运行。通过为 OpenClaw 设置 `HTTP_PROXY
 `setup.sh` 脚本会自动完成所有配置：
 
 ```bash
-cd ~/prj/claw-vault
+cd ~/prj/clawvault
 source venv/bin/activate
 ./scripts/setup.sh
 ```
@@ -54,9 +54,9 @@ source venv/bin/activate
 ### 1. 启动 ClawVault
 
 ```bash
-cd ~/prj/claw-vault
+cd ~/prj/clawvault
 source venv/bin/activate
-claw-vault start --dashboard-host 0.0.0.0
+clawvault start --dashboard-host 0.0.0.0
 ```
 
 ### 2. 设置代理环境变量

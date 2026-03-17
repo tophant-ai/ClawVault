@@ -46,3 +46,6 @@ Cargo.lock
 .windsurf
 doc/develop
 
+.claude
+.qodo
+.windsurf

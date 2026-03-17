@@ -13,7 +13,7 @@
 
 ```bash
 ssh root@<服务器IP>
-cd ~/prj/claw-vault
+cd ~/prj/clawvault
 source venv/bin/activate
 
 # 配置 OpenClaw 代理集成
@@ -30,7 +30,7 @@ source venv/bin/activate
 服务：
 - **代理**: `http://127.0.0.1:8765`
 - **仪表盘**: `http://<服务器IP>:8766`
-- **日志**: `/tmp/claw-vault.log`
+- **日志**: `/tmp/clawvault.log`
 
 ## 4. 测试
 
@@ -68,12 +68,12 @@ source venv/bin/activate
 ## CLI 命令
 
 ```bash
-claw-vault --version          # 版本
-claw-vault start              # 启动代理 + 仪表盘
-claw-vault scan "text"        # 扫描文本中的威胁
-claw-vault demo               # 交互式演示
-claw-vault config show        # 显示配置
-claw-vault skill list         # 列出 Skill
+clawvault --version          # 版本
+clawvault start              # 启动代理 + 仪表盘
+clawvault scan "text"        # 扫描文本中的威胁
+clawvault demo               # 交互式演示
+clawvault config show        # 显示配置
+clawvault skill list         # 列出 Skill
 ```
 
 ## 故障排查

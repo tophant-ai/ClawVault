@@ -27,11 +27,11 @@ This script will:
 
 ```bash
 ssh root@<server-ip>
-cd ~/prj/claw-vault
+cd ~/prj/clawvault
 source venv/bin/activate
 
 # Initialize config (creates ~/.ClawVault/config.yaml)
-claw-vault config init
+clawvault config init
 ```
 
 ### Recommended Production Config
@@ -68,7 +68,7 @@ dashboard:
 Services after start:
 - **Proxy**: `http://127.0.0.1:8765`
 - **Dashboard**: `http://127.0.0.1:8766`
-- **Log**: `/tmp/claw-vault.log`
+- **Log**: `/tmp/clawvault.log`
 
 ## Remote Dashboard Access
 
@@ -130,5 +130,5 @@ pip install -e .
 
 **Check logs**:
 ```bash
-tail -f /tmp/claw-vault.log
+tail -f /tmp/clawvault.log
 ```

@@ -11,14 +11,14 @@ echo "🔗 OpenClaw + ClawVault Setup"
 echo "========================"
 echo ""
 
-# Check claw-vault installed
+# Check clawvault installed
 echo "[1/3] Checking installation..."
-if ! command -v claw-vault &> /dev/null; then
-    echo "❌ claw-vault not found. Install first:"
+if ! command -v clawvault &> /dev/null; then
+    echo "❌ clawvault not found. Install first:"
     echo "   cd $(pwd) && source venv/bin/activate && pip install -e ."
     exit 1
 fi
-echo "  ✓ claw-vault $(claw-vault --version 2>/dev/null || echo 'installed')"
+echo "  ✓ clawvault $(clawvault --version 2>/dev/null || echo 'installed')"
 
 if [ ! -f "$SERVICE_FILE" ]; then
     echo "  ⚠️  openclaw-gateway.service not found at $SERVICE_FILE"
@@ -68,11 +68,11 @@ else
     echo "  ⚠️  Skipped (service file not found)"
 fi
 
-# Init claw-vault config
-echo "[3/3] Initializing claw-vault config..."
+# Init clawvault config
+echo "[3/3] Initializing clawvault config..."
 CONF="$HOME/.ClawVault/config.yaml"
 if [ ! -f "$CONF" ]; then
-    claw-vault config init 2>/dev/null || true
+    clawvault config init 2>/dev/null || true
 fi
 # Set ssl_verify: false for dev
 if [ -f "$CONF" ] && grep -q "ssl_verify: true" "$CONF"; then
