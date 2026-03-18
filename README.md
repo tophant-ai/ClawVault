@@ -26,7 +26,7 @@
 - ✅ You need **security detection** for sensitive data, injections, and dangerous commands
 - ✅ You want a **unified dashboard** to manage all your AI security policies
 
-## 🖼️ Demo
+### Effect
 
 <div align="center">
 
