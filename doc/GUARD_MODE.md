@@ -10,7 +10,7 @@ ClawVault provides three guard modes. Switch them in real-time via the Dashboard
 
 **Block all detected threats** — sensitive data, injection attacks, dangerous commands.
 
-- Returns HTTP 403 with detection details
+- Returns HTTP 403 with safe detection summaries only
 - OpenAI-compatible error format (works with TUI clients)
 - Recommended for production environments with high security requirements
 
@@ -33,11 +33,11 @@ ClawVault provides three guard modes. Switch them in real-time via the Dashboard
 
 ## Behavior Matrix
 
-| Threat Type | Strict | Interactive (auto_sanitize) | Interactive (no sanitize) | Permissive |
-|-------------|--------|---------------------------|--------------------------|------------|
-| Sensitive data | Block | Auto-sanitize | Safety reminder | Pass + log |
-| Injection attack | Block | Block | Block | Pass + log |
-| Dangerous command | Block | Warning | Warning | Pass + log |
+| Threat Type       | Strict | Interactive (auto_sanitize) | Interactive (no sanitize) | Permissive |
+| ----------------- | ------ | --------------------------- | ------------------------- | ---------- |
+| Sensitive data    | Block  | Auto-sanitize               | Safety reminder           | Pass + log |
+| Injection attack  | Block  | Block                       | Block                     | Pass + log |
+| Dangerous command | Block  | Warning                     | Warning                   | Pass + log |
 
 ## Response Formats
 
@@ -45,11 +45,11 @@ ClawVault provides three guard modes. Switch them in real-time via the Dashboard
 
 ```json
 {
-  "error": {
-    "message": "[ClawVault] Strict mode: threat blocked\n\nDetected:\n  - AWS Access Key ID: AKIA***MPLE",
-    "type": "claw_vault_block",
-    "code": "content_blocked"
-  }
+	"error": {
+		"message": "[ClawVault] Strict mode: threat blocked\n\nSensitive data detected:\n  • AWS Access Key ID",
+		"type": "claw_vault_block",
+		"code": "content_blocked"
+	}
 }
 ```
 
@@ -84,7 +84,7 @@ Edit `~/.ClawVault/config.yaml`:
 
 ```yaml
 guard:
-  mode: strict          # strict | interactive | permissive
+  mode: strict # strict | interactive | permissive
   auto_sanitize: true
 ```
 

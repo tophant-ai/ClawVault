@@ -28,6 +28,7 @@ source venv/bin/activate
 ```
 
 Services:
+
 - **Proxy**: `http://127.0.0.1:8765`
 - **Dashboard**: `http://<server-ip>:8766`
 - **Log**: `/tmp/clawvault.log`
@@ -53,7 +54,7 @@ Or test in the Dashboard web UI: go to the **Test** tab and click any test case.
 ./scripts/deploy.sh <server-ip> root
 
 # On server: restart
-./scripts/stop.sh && ./scripts/start.sh
+./scripts/start.sh
 ```
 
 ## 7. Uninstall
@@ -79,6 +80,7 @@ clawvault skill list         # List skills
 ## Troubleshooting
 
 **pip install fails (proxy conflict)**:
+
 ```bash
 unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
 pip install -e .
@@ -87,11 +89,13 @@ pip install -e .
 **HTTPS/SSL errors**: Set `ssl_verify: false` in `~/.ClawVault/config.yaml`
 
 **OpenClaw not using proxy**: Restart OpenClaw after setting env vars:
+
 ```bash
 source ~/.openclaw/.env && openclaw
 ```
 
 **Dashboard not accessible remotely**: Use SSH tunnel:
+
 ```bash
 ssh -L 8766:localhost:8766 root@<server-ip>
 # Then visit http://localhost:8766

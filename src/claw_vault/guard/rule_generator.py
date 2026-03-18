@@ -123,9 +123,9 @@ class RuleGenerator:
 
     def __init__(self, llm_client: Optional[Any] = None):
         """Initialize the rule generator.
-        
+
         Args:
-            llm_client: Optional LLM client (OpenAI, Anthropic, etc.). 
+            llm_client: Optional LLM client (OpenAI, Anthropic, etc.).
                        If None, will attempt to use environment variables.
         """
         self.llm_client = llm_client
@@ -140,34 +140,35 @@ class RuleGenerator:
         try:
             import os
             from openai import OpenAI
-            
+
             api_key = os.getenv("OPENAI_API_KEY")
             if api_key:
                 self.llm_client = OpenAI(api_key=api_key)
                 logger.info("rule_generator.llm_setup", provider="openai")
             else:
-                logger.warning("rule_generator.no_api_key", 
-                             msg="No OPENAI_API_KEY found, rule generation will fail")
+                logger.warning(
+                    "rule_generator.no_api_key",
+                    msg="No OPENAI_API_KEY found, rule generation will fail",
+                )
         except ImportError:
-            logger.warning("rule_generator.import_error", 
-                          msg="OpenAI package not installed, install with: pip install openai")
+            logger.warning(
+                "rule_generator.import_error",
+                msg="OpenAI package not installed, install with: pip install openai",
+            )
 
     def generate_rule(
-        self, 
-        natural_language_policy: str,
-        model: str = "gpt-4o-mini",
-        temperature: float = 0.1
+        self, natural_language_policy: str, model: str = "gpt-4o-mini", temperature: float = 0.1
     ) -> RuleConfig:
         """Generate a security rule from natural language description.
-        
+
         Args:
             natural_language_policy: User's security policy in natural language
             model: LLM model to use for generation
             temperature: LLM temperature (lower = more deterministic)
-            
+
         Returns:
             RuleConfig object representing the generated rule
-            
+
         Raises:
             ValueError: If rule generation fails or produces invalid output
         """
@@ -182,21 +183,21 @@ class RuleGenerator:
                 model=model,
                 messages=[
                     {"role": "system", "content": RULE_GENERATION_SYSTEM_PROMPT},
-                    {"role": "user", "content": natural_language_policy}
+                    {"role": "user", "content": natural_language_policy},
                 ],
                 temperature=temperature,
-                max_tokens=1000
+                max_tokens=1000,
             )
 
             yaml_content = response.choices[0].message.content.strip()
-            
+
             # Remove markdown code blocks if present
-            yaml_content = re.sub(r'^```ya?ml\s*\n', '', yaml_content, flags=re.MULTILINE)
-            yaml_content = re.sub(r'\n```\s*$', '', yaml_content, flags=re.MULTILINE)
-            
+            yaml_content = re.sub(r"^```ya?ml\s*\n", "", yaml_content, flags=re.MULTILINE)
+            yaml_content = re.sub(r"\n```\s*$", "", yaml_content, flags=re.MULTILINE)
+
             # Parse YAML
             parsed = yaml.safe_load(yaml_content)
-            
+
             # Handle both single rule and list of rules
             if isinstance(parsed, list):
                 if len(parsed) == 0:
@@ -209,33 +210,31 @@ class RuleGenerator:
 
             # Validate and create RuleConfig
             rule = RuleConfig(**rule_dict)
-            
-            logger.info("rule_generator.success", 
-                       rule_id=rule.id, 
-                       rule_name=rule.name,
-                       action=rule.action)
-            
+
+            logger.info(
+                "rule_generator.success", rule_id=rule.id, rule_name=rule.name, action=rule.action
+            )
+
             return rule
 
         except Exception as exc:
-            logger.error("rule_generator.failed", error=str(exc), policy=natural_language_policy[:100])
+            logger.error(
+                "rule_generator.failed", error=str(exc), policy=natural_language_policy[:100]
+            )
             raise ValueError(f"Failed to generate rule: {exc}") from exc
 
     def generate_multiple_rules(
-        self,
-        natural_language_policy: str,
-        model: str = "gpt-4o-mini",
-        temperature: float = 0.1
+        self, natural_language_policy: str, model: str = "gpt-4o-mini", temperature: float = 0.1
     ) -> list[RuleConfig]:
         """Generate multiple security rules from a complex policy description.
-        
+
         This is useful when a single policy statement requires multiple rules.
-        
+
         Args:
             natural_language_policy: User's security policy in natural language
             model: LLM model to use for generation
             temperature: LLM temperature
-            
+
         Returns:
             List of RuleConfig objects
         """
@@ -247,32 +246,32 @@ class RuleGenerator:
         try:
             # Modified prompt for multiple rules
             user_prompt = f"{natural_language_policy}\n\nGenerate one or more rules as a YAML list to implement this policy."
-            
+
             response = self.llm_client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": RULE_GENERATION_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
                 temperature=temperature,
-                max_tokens=2000
+                max_tokens=2000,
             )
 
             yaml_content = response.choices[0].message.content.strip()
-            yaml_content = re.sub(r'^```ya?ml\s*\n', '', yaml_content, flags=re.MULTILINE)
-            yaml_content = re.sub(r'\n```\s*$', '', yaml_content, flags=re.MULTILINE)
-            
+            yaml_content = re.sub(r"^```ya?ml\s*\n", "", yaml_content, flags=re.MULTILINE)
+            yaml_content = re.sub(r"\n```\s*$", "", yaml_content, flags=re.MULTILINE)
+
             parsed = yaml.safe_load(yaml_content)
-            
+
             if isinstance(parsed, dict):
                 parsed = [parsed]
             elif not isinstance(parsed, list):
                 raise ValueError(f"Unexpected YAML structure: {type(parsed)}")
 
             rules = [RuleConfig(**rule_dict) for rule_dict in parsed]
-            
+
             logger.info("rule_generator.multiple_success", count=len(rules))
-            
+
             return rules
 
         except Exception as exc:
@@ -281,73 +280,79 @@ class RuleGenerator:
 
     def validate_rule(self, rule: RuleConfig) -> tuple[bool, list[str]]:
         """Validate a generated rule for correctness and security.
-        
+
         Args:
             rule: The rule to validate
-            
+
         Returns:
             Tuple of (is_valid, list_of_warnings)
         """
         warnings = []
-        
+
         # Check action is valid
         valid_actions = ["allow", "block", "sanitize", "ask_user"]
         if rule.action not in valid_actions:
             warnings.append(f"Invalid action '{rule.action}', must be one of {valid_actions}")
-        
+
         # Check ID format
-        if not re.match(r'^[a-z0-9\-]+$', rule.id):
+        if not re.match(r"^[a-z0-9\-]+$", rule.id):
             warnings.append(f"Rule ID '{rule.id}' should use kebab-case (lowercase with hyphens)")
-        
+
         # Check if condition is too broad
         if rule.when:
             cond = rule.when
-            has_any_condition = any([
-                cond.has_sensitive is not None,
-                cond.has_commands is not None,
-                cond.has_injections is not None,
-                cond.threat_levels is not None,
-                cond.min_risk_score is not None,
-                cond.pattern_types is not None
-            ])
-            
+            has_any_condition = any(
+                [
+                    cond.has_sensitive is not None,
+                    cond.has_commands is not None,
+                    cond.has_injections is not None,
+                    cond.threat_levels is not None,
+                    cond.min_risk_score is not None,
+                    cond.pattern_types is not None,
+                ]
+            )
+
             if not has_any_condition:
                 warnings.append("Rule has no conditions - it will match everything")
-        
+
         # Warn about overly permissive rules
         if rule.action == "allow" and rule.when and rule.when.has_injections:
             warnings.append("WARNING: Allowing prompt injections is dangerous")
-        
+
         is_valid = len([w for w in warnings if w.startswith("Invalid")]) == 0
-        
+
         return is_valid, warnings
 
     def explain_rule(self, rule: RuleConfig) -> str:
         """Generate a human-readable explanation of what a rule does.
-        
+
         Args:
             rule: The rule to explain
-            
+
         Returns:
             Human-readable explanation string
         """
         parts = [f"**{rule.name}**"]
-        
+
         if rule.description:
             parts.append(f"\n{rule.description}")
-        
+
         parts.append(f"\n\nAction: **{rule.action.upper()}**")
-        
+
         if rule.when:
             parts.append("\n\nConditions:")
             cond = rule.when
-            
+
             if cond.has_sensitive is not None:
                 parts.append(f"- {'Has' if cond.has_sensitive else 'Does not have'} sensitive data")
             if cond.has_commands is not None:
-                parts.append(f"- {'Has' if cond.has_commands else 'Does not have'} dangerous commands")
+                parts.append(
+                    f"- {'Has' if cond.has_commands else 'Does not have'} dangerous commands"
+                )
             if cond.has_injections is not None:
-                parts.append(f"- {'Has' if cond.has_injections else 'Does not have'} injection attempts")
+                parts.append(
+                    f"- {'Has' if cond.has_injections else 'Does not have'} injection attempts"
+                )
             if cond.threat_levels:
                 parts.append(f"- Threat level is one of: {', '.join(cond.threat_levels)}")
             if cond.min_risk_score is not None:
@@ -356,7 +361,7 @@ class RuleGenerator:
                 parts.append(f"- Matches pattern types: {', '.join(cond.pattern_types[:5])}")
                 if len(cond.pattern_types) > 5:
                     parts.append(f"  (and {len(cond.pattern_types) - 5} more)")
-        
+
         parts.append(f"\n\nStatus: {'✓ Enabled' if rule.enabled else '✗ Disabled'}")
-        
+
         return "".join(parts)

@@ -29,7 +29,9 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     risk_score REAL NOT NULL DEFAULT 0.0,
     action_taken TEXT NOT NULL DEFAULT 'allow',
     skill_name TEXT,
-    details TEXT NOT NULL DEFAULT ''
+    details TEXT NOT NULL DEFAULT '',
+    agent_id TEXT,
+    agent_name TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp);
@@ -50,8 +52,21 @@ class AuditStore:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(str(self._db_path))
         await self._db.executescript(SCHEMA)
+        await self._ensure_columns()
         await self._db.commit()
         logger.info("audit_store_initialized", path=str(self._db_path))
+
+    async def _ensure_columns(self) -> None:
+        """Apply additive schema migrations for older SQLite databases."""
+        assert self._db is not None
+        cursor = await self._db.execute("PRAGMA table_info(audit_logs)")
+        rows = await cursor.fetchall()
+        existing_columns = {row[1] for row in rows}
+
+        if "agent_id" not in existing_columns:
+            await self._db.execute("ALTER TABLE audit_logs ADD COLUMN agent_id TEXT")
+        if "agent_name" not in existing_columns:
+            await self._db.execute("ALTER TABLE audit_logs ADD COLUMN agent_name TEXT")
 
     async def close(self) -> None:
         if self._db:
@@ -65,8 +80,8 @@ class AuditStore:
             """INSERT INTO audit_logs
             (timestamp, session_id, direction, api_endpoint, method,
              token_count, cost_usd, detections, risk_level, risk_score,
-             action_taken, skill_name, details)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             action_taken, skill_name, details, agent_id, agent_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 record.timestamp.isoformat(),
                 record.session_id,
@@ -81,6 +96,8 @@ class AuditStore:
                 record.action_taken,
                 record.skill_name,
                 record.details,
+                record.agent_id,
+                record.agent_name,
             ),
         )
         await self._db.commit()
@@ -96,9 +113,7 @@ class AuditStore:
         rows = await cursor.fetchall()
         return [self._row_to_record(row) for row in rows]
 
-    async def query_by_date_range(
-        self, start: datetime, end: datetime
-    ) -> list[AuditRecord]:
+    async def query_by_date_range(self, start: datetime, end: datetime) -> list[AuditRecord]:
         """Get audit records within a date range."""
         assert self._db is not None
         cursor = await self._db.execute(
@@ -146,9 +161,7 @@ class AuditStore:
         """Delete records older than retention period. Returns count deleted."""
         assert self._db is not None
         cutoff = (datetime.utcnow() - timedelta(days=retention_days)).isoformat()
-        cursor = await self._db.execute(
-            "DELETE FROM audit_logs WHERE timestamp < ?", (cutoff,)
-        )
+        cursor = await self._db.execute("DELETE FROM audit_logs WHERE timestamp < ?", (cutoff,))
         await self._db.commit()
         deleted = cursor.rowcount
         if deleted:
@@ -177,4 +190,6 @@ class AuditStore:
             action_taken=row[11],
             skill_name=row[12],
             details=row[13],
+            agent_id=row[14],
+            agent_name=row[15],
         )

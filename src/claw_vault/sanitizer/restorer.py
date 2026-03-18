@@ -8,7 +8,7 @@ import structlog
 
 logger = structlog.get_logger()
 
-PLACEHOLDER_REGEX = re.compile(r'\[[A-Z_]+_\d+\]')
+PLACEHOLDER_REGEX = re.compile(r"\[[A-Z_]+_\d+\]")
 
 
 class Restorer:

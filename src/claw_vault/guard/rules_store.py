@@ -94,7 +94,9 @@ def load_rules(path: Path | None = None) -> list[RuleConfig]:
         return []
 
     if not isinstance(raw, list):
-        logger.warning("guard.rules.invalid_format", path=str(rules_path), detail="root is not a list")
+        logger.warning(
+            "guard.rules.invalid_format", path=str(rules_path), detail="root is not a list"
+        )
         return []
 
     items: list[RuleConfig] = []
@@ -125,4 +127,3 @@ def save_rules(rules: list[RuleConfig], path: Path | None = None) -> None:
 def export_rules(rules: list[RuleConfig]) -> list[dict]:
     """Convert rule models to plain dicts for JSON APIs."""
     return [r.model_dump(exclude_none=True) for r in rules]
-

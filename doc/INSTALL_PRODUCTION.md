@@ -18,6 +18,7 @@ From your **local machine** (where the source code is):
 ```
 
 This script will:
+
 1. Package the project (excluding `__pycache__`, `.pyc`)
 2. Upload to the server via SCP
 3. Create a Python virtual environment on the server
@@ -41,10 +42,10 @@ Edit `~/.ClawVault/config.yaml`:
 ```yaml
 proxy:
   port: 8765
-  ssl_verify: false        # Set true if you have proper CA certs
+  ssl_verify: false # Set true if you have proper CA certs
 
 guard:
-  mode: "interactive"      # or "strict" for maximum protection
+  mode: "interactive" # or "strict" for maximum protection
   auto_sanitize: true
 
 monitor:
@@ -54,7 +55,7 @@ monitor:
 
 dashboard:
   enabled: true
-  host: "127.0.0.1"        # Bind to localhost; use SSH tunnel for remote access
+  host: "127.0.0.1" # Bind to localhost; use SSH tunnel for remote access
   port: 8766
 ```
 
@@ -66,6 +67,7 @@ dashboard:
 ```
 
 Services after start:
+
 - **Proxy**: `http://127.0.0.1:8765`
 - **Dashboard**: `http://127.0.0.1:8766`
 - **Log**: `/tmp/clawvault.log`
@@ -87,7 +89,7 @@ ssh -L 8766:localhost:8766 root@<server-ip>
 ./scripts/deploy.sh <server-ip> root
 
 # On server: restart
-./scripts/stop.sh && ./scripts/start.sh
+./scripts/start.sh
 ```
 
 ## Verify
@@ -107,18 +109,19 @@ Or test via the Dashboard web UI: open the **Test** tab and run any test case.
 
 ## Scripts Reference
 
-| Script | Description |
-|--------|-------------|
-| `scripts/deploy.sh <ip> [user]` | Pack, upload, and install on server |
-| `scripts/start.sh` | Start ClawVault (add `--with-openclaw` for OpenClaw) |
-| `scripts/stop.sh` | Stop all services |
-| `scripts/test.sh` | Run CLI + API tests |
-| `scripts/setup.sh` | Configure OpenClaw proxy integration |
-| `scripts/uninstall.sh` | Uninstall and restore |
+| Script                          | Description                                          |
+| ------------------------------- | ---------------------------------------------------- |
+| `scripts/deploy.sh <ip> [user]` | Pack, upload, and install on server                  |
+| `scripts/start.sh`              | Start ClawVault (add `--with-openclaw` for OpenClaw) |
+| `scripts/stop.sh`               | Stop all services                                    |
+| `scripts/test.sh`               | Run CLI + API tests                                  |
+| `scripts/setup.sh`              | Configure OpenClaw proxy integration                 |
+| `scripts/uninstall.sh`          | Uninstall and restore                                |
 
 ## Troubleshooting
 
 **pip install fails (proxy conflict)**:
+
 ```bash
 unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
 pip install -e .
@@ -129,6 +132,7 @@ pip install -e .
 **Dashboard not accessible remotely**: Use SSH tunnel (see above).
 
 **Check logs**:
+
 ```bash
 tail -f /tmp/clawvault.log
 ```

@@ -6,31 +6,23 @@ import structlog
 
 from claw_vault.detector.engine import ScanResult, ThreatLevel
 from claw_vault.guard.action import Action, ActionResult
-from claw_vault.guard.rules_store import RuleConfig, RuleCondition, load_rules
+from claw_vault.guard.rules_store import RuleCondition, RuleConfig, load_rules
 
 logger = structlog.get_logger()
 
+PATTERN_TYPE_ALIASES: dict[str, set[str]] = {
+    "aws_access_key": {"aws_access_key", "aws_access_key_id"},
+    "aws_access_key_id": {"aws_access_key", "aws_access_key_id"},
+}
+
 
 class RuleEngine:
-    """Evaluates scan results and determines the appropriate action.
-
-    Modes:
-    - strict: BLOCK all detected threats (sensitive data, injections, commands)
-    - interactive: auto-sanitize sensitive data, block injections, warn commands
-    - permissive: log all threats, allow everything (sanitize if auto_sanitize on)
-
-    auto_sanitize: replace sensitive data with masked placeholders and restore
-    in AI response.  Only applies in interactive/permissive modes.
-    """
+    """Evaluates scan results and determines the appropriate action."""
 
     def __init__(self, mode: str = "interactive", auto_sanitize: bool = True) -> None:
         self._mode = mode
         self._auto_sanitize = auto_sanitize
-        # Custom rules loaded from ~/.ClawVault/rules.yaml
-        # The dashboard can update this at runtime.
         self._rules: list[RuleConfig] = load_rules()
-
-    # -------- Public configuration helpers --------
 
     @property
     def rules(self) -> list[RuleConfig]:
@@ -40,8 +32,24 @@ class RuleEngine:
         """Replace in-memory rules (used by dashboard API)."""
         self._rules = list(rules)
 
-    def evaluate(self, scan: ScanResult) -> ActionResult:
-        """Determine action based on scan results and current mode."""
+    def evaluate_custom_rules(self, scan: ScanResult) -> ActionResult | None:
+        """Evaluate only custom rules and return the first matched result."""
+        if not self._rules:
+            return None
+        return self._evaluate_custom_rules(scan, self._build_details(scan))
+
+    def evaluate(
+        self,
+        scan: ScanResult,
+        guard_mode: str | None = None,
+        auto_sanitize: bool | None = None,
+    ) -> ActionResult:
+        """Determine action based on scan results and mode."""
+        effective_mode = guard_mode if guard_mode is not None else self._mode
+        effective_auto_sanitize = (
+            auto_sanitize if auto_sanitize is not None else self._auto_sanitize
+        )
+
         if not scan.has_threats:
             return ActionResult(
                 action=Action.ALLOW,
@@ -54,68 +62,91 @@ class RuleEngine:
         score = scan.max_risk_score
         details = self._build_details(scan)
 
-        # 1) Custom rules: if any enabled rule matches, it takes precedence
         if self._rules:
             custom_result = self._evaluate_custom_rules(scan, details)
             if custom_result is not None:
                 return custom_result
 
-        # 2) Fallback to built-in mode matrix behaviour
         has_injections = bool(scan.injections)
         has_commands = bool(scan.commands)
         has_sensitive_only = bool(scan.sensitive) and not has_injections and not has_commands
 
-        if self._mode == "strict":
+        if effective_mode == "strict":
             return self._strict_evaluate(threat, score, details, scan)
-        elif self._mode == "permissive":
-            return self._permissive_evaluate(threat, score, details, scan, has_sensitive_only)
+        elif effective_mode == "permissive":
+            return self._permissive_evaluate(
+                threat, score, details, scan, has_sensitive_only, effective_auto_sanitize
+            )
         else:
-            return self._interactive_evaluate(threat, score, details, scan, has_injections, has_commands, has_sensitive_only)
-
-    # -------- Built-in guard matrix evaluation --------
+            return self._interactive_evaluate(
+                threat,
+                score,
+                details,
+                scan,
+                has_injections,
+                has_commands,
+                has_sensitive_only,
+                effective_auto_sanitize,
+            )
 
     def _strict_evaluate(
-        self, threat: ThreatLevel, score: float, details: list[str], scan: ScanResult,
+        self,
+        threat: ThreatLevel,
+        score: float,
+        details: list[str],
+        scan: ScanResult,
     ) -> ActionResult:
-        # Strict: block ALL threats — sensitive data, injections, commands
         return ActionResult(Action.BLOCK, "Strict mode: threat blocked", score, details)
 
     def _interactive_evaluate(
-        self, threat: ThreatLevel, score: float, details: list[str], scan: ScanResult,
-        has_injections: bool, has_commands: bool, has_sensitive_only: bool,
+        self,
+        threat: ThreatLevel,
+        score: float,
+        details: list[str],
+        scan: ScanResult,
+        has_injections: bool,
+        has_commands: bool,
+        has_sensitive_only: bool,
+        auto_sanitize: bool,
     ) -> ActionResult:
-        # Injections always blocked
         if has_injections:
             return ActionResult(Action.BLOCK, "Prompt injection blocked", score, details)
-        # Sensitive data: auto-sanitize if enabled, otherwise warn
         if has_sensitive_only and scan.sensitive:
-            if self._auto_sanitize:
-                return ActionResult(Action.SANITIZE, "Sensitive data auto-sanitized", score, details)
-            return ActionResult(Action.ASK_USER, "Sensitive data detected — enable auto-sanitize for masking", score, details)
-        # Dangerous commands: warn
+            if auto_sanitize:
+                return ActionResult(
+                    Action.SANITIZE, "Sensitive data auto-sanitized", score, details
+                )
+            return ActionResult(
+                Action.ASK_USER,
+                "Sensitive data detected — enable auto-sanitize for masking",
+                score,
+                details,
+            )
         if has_commands:
-            return ActionResult(Action.ASK_USER, "Dangerous command detected — review needed", score, details)
-        # Mixed threats
-        if scan.sensitive and self._auto_sanitize:
+            return ActionResult(
+                Action.ASK_USER, "Dangerous command detected — review needed", score, details
+            )
+        if scan.sensitive and auto_sanitize:
             return ActionResult(Action.SANITIZE, "Sensitive data auto-sanitized", score, details)
         return ActionResult(Action.ASK_USER, "Threats detected — review needed", score, details)
 
     def _permissive_evaluate(
-        self, threat: ThreatLevel, score: float, details: list[str], scan: ScanResult,
+        self,
+        threat: ThreatLevel,
+        score: float,
+        details: list[str],
+        scan: ScanResult,
         has_sensitive_only: bool,
+        auto_sanitize: bool,
     ) -> ActionResult:
-        if has_sensitive_only and scan.sensitive and self._auto_sanitize:
-            return ActionResult(Action.SANITIZE, "Sensitive data auto-sanitized (permissive)", score, details)
+        if has_sensitive_only and scan.sensitive and auto_sanitize:
+            return ActionResult(
+                Action.SANITIZE, "Sensitive data auto-sanitized (permissive)", score, details
+            )
         return ActionResult(Action.ALLOW, "Permissive mode: allowed with logging", score, details)
 
-    # -------- Custom rule evaluation --------
-
     def _evaluate_custom_rules(self, scan: ScanResult, details: list[str]) -> ActionResult | None:
-        """Evaluate user-defined rules from rules.yaml.
-
-        The first enabled rule whose condition matches the scan wins.
-        If no rule matches, returns None so the built-in logic can decide.
-        """
+        """Evaluate user-defined rules from rules.yaml."""
         for rule in self._rules:
             if not rule.enabled:
                 continue
@@ -123,11 +154,10 @@ class RuleEngine:
             try:
                 if not self._matches_condition(cond, scan):
                     continue
-            except Exception as exc:  # pragma: no cover - defensive
+            except Exception as exc:
                 logger.warning("guard.rules.eval_error", rule_id=rule.id, error=str(exc))
                 continue
 
-            # Map string action from RuleConfig to Action enum
             try:
                 action = Action(rule.action)
             except ValueError:
@@ -163,32 +193,25 @@ class RuleEngine:
             return False
         if cond.has_injections is not None and cond.has_injections != has_injections:
             return False
-
-        if cond.threat_levels is not None:
-            if scan.threat_level.value not in cond.threat_levels:
-                return False
-
-        if cond.min_risk_score is not None:
-            if scan.max_risk_score < cond.min_risk_score:
-                return False
+        if cond.threat_levels is not None and scan.threat_level.value not in cond.threat_levels:
+            return False
+        if cond.min_risk_score is not None and scan.max_risk_score < cond.min_risk_score:
+            return False
 
         if cond.pattern_types:
             matched = False
-            # Sensitive detections: pattern_type
-            for s in scan.sensitive:
-                if s.pattern_type in cond.pattern_types:
+            for sensitive in scan.sensitive:
+                if RuleEngine._pattern_type_matches(sensitive.pattern_type, cond.pattern_types):
                     matched = True
                     break
-            # Command detections: reason as a "type"-like identifier
             if not matched:
-                for c in scan.commands:
-                    if c.reason in cond.pattern_types:
+                for command in scan.commands:
+                    if command.reason in cond.pattern_types:
                         matched = True
                         break
-            # Injection detections: injection_type
             if not matched:
-                for i in scan.injections:
-                    if i.injection_type in cond.pattern_types:
+                for injection in scan.injections:
+                    if injection.injection_type in cond.pattern_types:
                         matched = True
                         break
             if not matched:
@@ -197,12 +220,17 @@ class RuleEngine:
         return True
 
     @staticmethod
+    def _pattern_type_matches(pattern_type: str, expected_types: list[str]) -> bool:
+        aliases = PATTERN_TYPE_ALIASES.get(pattern_type, {pattern_type})
+        return any(expected in aliases for expected in expected_types)
+
+    @staticmethod
     def _build_details(scan: ScanResult) -> list[str]:
         details: list[str] = []
-        for s in scan.sensitive:
-            details.append(f"Sensitive: {s.description} ({s.masked_value})")
-        for c in scan.commands:
-            details.append(f"Command: {c.reason} — `{c.command[:40]}`")
-        for i in scan.injections:
-            details.append(f"Injection: {i.description}")
+        for sensitive in scan.sensitive:
+            details.append(f"Sensitive: {sensitive.description} ({sensitive.masked_value})")
+        for command in scan.commands:
+            details.append(f"Command: {command.reason} — `{command.command[:40]}`")
+        for injection in scan.injections:
+            details.append(f"Injection: {injection.description}")
         return details

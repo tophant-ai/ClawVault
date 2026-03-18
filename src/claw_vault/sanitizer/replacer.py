@@ -64,7 +64,7 @@ class Sanitizer:
         with self._lock:
             for det in sorted_detections:
                 placeholder = self._get_or_create_placeholder(det)
-                text = text[:det.start] + placeholder + text[det.end:]
+                text = text[: det.start] + placeholder + text[det.end :]
 
         logger.info(
             "text_sanitized",

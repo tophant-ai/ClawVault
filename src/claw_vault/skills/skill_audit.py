@@ -86,7 +86,9 @@ class SkillAuditSkill(BaseSkill):
         warnings = []
         for s in skill_list:
             if s["invocations"] > 50:
-                warnings.append(f"Skill '{s['name']}' has {s['invocations']} invocations — unusually active")
+                warnings.append(
+                    f"Skill '{s['name']}' has {s['invocations']} invocations — unusually active"
+                )
 
         return SkillResult(
             success=True,
@@ -167,14 +169,19 @@ class SkillAuditSkill(BaseSkill):
 
         timeline = []
         for r in recent:
-            timeline.append({
-                "timestamp": r.get("timestamp", ""),
-                "skill": r.get("skill", "unknown"),
-                "action": r.get("action", "unknown"),
-                "result": r.get("result", ""),
-                "details": {k: v for k, v in r.items()
-                           if k not in ("timestamp", "skill", "action", "result")},
-            })
+            timeline.append(
+                {
+                    "timestamp": r.get("timestamp", ""),
+                    "skill": r.get("skill", "unknown"),
+                    "action": r.get("action", "unknown"),
+                    "result": r.get("result", ""),
+                    "details": {
+                        k: v
+                        for k, v in r.items()
+                        if k not in ("timestamp", "skill", "action", "result")
+                    },
+                }
+            )
 
         return SkillResult(
             success=True,
@@ -226,12 +233,14 @@ class SkillAuditSkill(BaseSkill):
                 if perm:
                     implied_perms.add(perm)
 
-            report.append({
-                "skill": skill,
-                "actions_observed": sorted(actions),
-                "implied_permissions": sorted(implied_perms),
-                "action_count": len(actions),
-            })
+            report.append(
+                {
+                    "skill": skill,
+                    "actions_observed": sorted(actions),
+                    "implied_permissions": sorted(implied_perms),
+                    "action_count": len(actions),
+                }
+            )
 
         return SkillResult(
             success=True,

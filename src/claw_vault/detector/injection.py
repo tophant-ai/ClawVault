@@ -24,81 +24,77 @@ INJECTION_PATTERNS: list[tuple[str, str, float, str]] = [
     # Direct instruction override
     (
         "instruction_override",
-        r'(?:ignore|disregard|forget|override|bypass)\s+(?:all\s+)?(?:previous|above|prior|earlier|system)\s+(?:instructions?|prompts?|rules?|constraints?)',
+        r"(?:ignore|disregard|forget|override|bypass)\s+(?:all\s+)?(?:previous|above|prior|earlier|system)\s+(?:instructions?|prompts?|rules?|constraints?)",
         9.5,
         "Attempts to override system instructions",
     ),
     (
         "new_instructions",
-        r'(?:new|updated|revised|real)\s+(?:instructions?|system\s+prompt|directive)',
+        r"(?:new|updated|revised|real)\s+(?:instructions?|system\s+prompt|directive)",
         8.5,
         "Attempts to inject new instructions",
     ),
     (
         "role_hijack",
-        r'(?:you\s+are\s+now|act\s+as|pretend\s+to\s+be|your\s+new\s+role\s+is)',
+        r"(?:you\s+are\s+now|act\s+as|pretend\s+to\s+be|your\s+new\s+role\s+is)",
         8.0,
         "Attempts to hijack AI role",
     ),
-
     # Data exfiltration attempts
     (
         "exfil_request",
-        r'(?:output|print|display|reveal|show|send|transmit)\s+(?:all\s+)?(?:api\s*keys?|passwords?|secrets?|credentials?|tokens?)',
+        r"(?:output|print|display|reveal|show|send|transmit)\s+(?:all\s+)?(?:api\s*keys?|passwords?|secrets?|credentials?|tokens?)",
         9.0,
         "Attempts to extract sensitive data",
     ),
     (
         "exfil_url",
-        r'(?:send|post|upload|transmit)\s+(?:to|data\s+to)\s+https?://',
+        r"(?:send|post|upload|transmit)\s+(?:to|data\s+to)\s+https?://",
         9.0,
         "Attempts to send data to external URL",
     ),
-
     # Encoding evasion
     (
         "base64_payload",
-        r'(?:base64|b64)\s*(?:decode|exec|eval|run)',
+        r"(?:base64|b64)\s*(?:decode|exec|eval|run)",
         7.5,
         "Encoded payload execution attempt",
     ),
     (
         "unicode_evasion",
-        r'[\u200b-\u200f\u2028-\u202f\u2060-\u206f\ufeff]',
+        r"[\u200b-\u200f\u2028-\u202f\u2060-\u206f\ufeff]",
         6.0,
         "Invisible Unicode characters (possible evasion)",
     ),
-
     # Delimiter attacks
     (
         "delimiter_escape",
-        r'---\s*(?:END|BEGIN|SYSTEM|ADMIN|ROOT)\s*---',
+        r"---\s*(?:END|BEGIN|SYSTEM|ADMIN|ROOT)\s*---",
         8.0,
         "Delimiter-based injection attempt",
     ),
     (
         "xml_injection",
-        r'<\s*(?:system|admin|root|prompt)\s*>',
+        r"<\s*(?:system|admin|root|prompt)\s*>",
         7.5,
         "XML-style prompt injection",
     ),
     (
         "markdown_injection",
-        r'\[(?:system|admin|hidden)\]\s*\(',
+        r"\[(?:system|admin|hidden)\]\s*\(",
         7.0,
         "Markdown-style injection attempt",
     ),
-
     # Jailbreak patterns
     (
         "dan_jailbreak",
-        r'(?:DAN|do\s+anything\s+now|developer\s+mode|jailbreak)',
+        r"(?:DAN|do\s+anything\s+now|developer\s+mode|jailbreak)",
         7.0,
         "Known jailbreak pattern",
     ),
     (
         "hypothetical_bypass",
-        r'(?:hypothetically|in\s+theory|for\s+educational\s+purposes?|imagine\s+you\s+could)',
+        r"(?:hypothetically|in\s+theory|for\s+educational\s+purposes?|imagine\s+you\s+could)",
         5.0,
         "Hypothetical framing (possible bypass)",
     ),
@@ -123,13 +119,15 @@ class InjectionDetector:
 
         for name, regex, score, desc in self._compiled:
             for match in regex.finditer(text):
-                results.append(InjectionResult(
-                    injection_type=name,
-                    matched_text=match.group(0)[:100],
-                    risk_score=score,
-                    confidence=0.85,
-                    description=desc,
-                ))
+                results.append(
+                    InjectionResult(
+                        injection_type=name,
+                        matched_text=match.group(0)[:100],
+                        risk_score=score,
+                        confidence=0.85,
+                        description=desc,
+                    )
+                )
 
         results.sort(key=lambda r: -r.risk_score)
 
