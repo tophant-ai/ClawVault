@@ -20,15 +20,18 @@
   <img src="./doc/images/cartoon_en.png" alt="ClawVault Cartoon" width="800"/>
 </div>
 
-## 🎯 ClawVault is right for you if
+## 🎯 ClawVault is for you if
 
-- ✅ You want **visual monitoring** of AI agents and model invocations
-- ✅ You need **atomic control** over agent capabilities and permissions
-- ✅ You want **generative policies** that adapt to new threats automatically
-- ✅ You need **real-time alerts** when sensitive assets are accessed
-- ✅ You want **budget control** over AI token usage and costs
-- ✅ You need **security detection** for sensitive data, injections, and dangerous commands
-- ✅ You want a **unified dashboard** to manage all your AI security policies
+- ✅ You’re concerned about leaking personal private data when interacting with AI agents
+- ✅ You want to prevent AI agents from accessing API keys, private files, and credentials
+- ✅ You need to stop AI agents from mishandling sensitive or confidential files
+- ✅ You want to keep logs of how AI interacts with your private data
+- ✅ You need to detect AI injection attacks and dangerous commands
+
+Activate your personal AI Vault:
+- 1️⃣ Load private files
+- 2️⃣ Set up and customize your secure storage
+- 3️⃣ Create remote management skills
 
 ### Effect
 
