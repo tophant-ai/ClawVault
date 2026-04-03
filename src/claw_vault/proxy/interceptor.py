@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 import uuid
 from collections.abc import Callable
@@ -68,6 +69,20 @@ class ClawVaultAddon:
         # Track blocked message contents so they can be stripped from future
         # requests in the same conversation, preserving session continuity.
         self._blocked_contents: set[str] = set()
+
+        # File monitor enforcement: sensitive values from flagged files
+        self._flagged_file_values: dict[str, set[str]] = {}
+        self._flagged_lock = threading.Lock()
+
+        # Proxy pause state (used by strict mode file monitor enforcement)
+        self._paused = False
+        self._pause_reason: str | None = None
+        self._pause_event_id: str | None = None
+        self._pause_lock = threading.Lock()
+        self._pause_time: float | None = None
+        self._auto_resume_seconds: int = 300  # 5 minutes
+        self._auto_resume_timer: threading.Timer | None = None
+
         logger.info(
             "interceptor_initialized",
             session_id=self._session_id,
@@ -76,6 +91,29 @@ class ClawVaultAddon:
 
     def request(self, flow: http.HTTPFlow) -> None:
         """Intercept outgoing request to AI provider."""
+        # Pause guard: block all intercepted requests when proxy is paused
+        if self._is_paused and self._should_intercept(flow):
+            with self._pause_lock:
+                reason = self._pause_reason or "security event"
+            flow.response = http.Response.make(
+                403,
+                json.dumps(
+                    {
+                        "error": {
+                            "message": (
+                                f"[ClawVault] Proxy paused: {reason}. "
+                                "Acknowledge the alert in the ClawVault dashboard to resume."
+                            ),
+                            "type": "claw_vault_paused",
+                            "code": "proxy_paused",
+                        },
+                    }
+                ),
+                {"Content-Type": "application/json"},
+            )
+            logger.info("request_blocked_proxy_paused", url=flow.request.pretty_url)
+            return
+
         start_time = time.monotonic()
         flow_id = str(id(flow))
 
@@ -114,6 +152,61 @@ class ClawVaultAddon:
         scan_text = self._extract_user_content(body)
         agent_id = self._extract_agent_name(body)
         session_id = None
+
+        # Check for content from security-flagged files
+        flagged_values = self._get_all_flagged_values()
+        if flagged_values and scan_text:
+            matched_flagged = [v for v in flagged_values if v in scan_text]
+            if matched_flagged:
+                logger.warning(
+                    "request_contains_flagged_file_content",
+                    flow_id=flow_id,
+                    matched_count=len(matched_flagged),
+                )
+                flow.response = http.Response.make(
+                    403,
+                    json.dumps(
+                        {
+                            "error": {
+                                "message": (
+                                    "[ClawVault] Request blocked: contains content "
+                                    "from security-flagged files. Review file monitor "
+                                    "alerts in the dashboard."
+                                ),
+                                "type": "claw_vault_file_monitor_block",
+                                "code": "flagged_file_content",
+                            },
+                        }
+                    ),
+                    {"Content-Type": "application/json"},
+                )
+                self._emit_audit(
+                    flow,
+                    ScanResult(),
+                    "block_file_content",
+                    body,
+                    agent_id=agent_id,
+                    user_content=scan_text,
+                )
+                self._pending_requests[flow_id] = {
+                    "original_body": received_body,
+                    "forwarded_body": body,
+                    "request_headers": dict(flow.request.headers),
+                    "start_time": start_time,
+                    "model": self.token_counter.detect_model_from_url(
+                        flow.request.pretty_url
+                    ),
+                    "agent_id": agent_id,
+                    "session_id": session_id,
+                    "agent_config": {},
+                    "action": "block_file_content",
+                    "risk_level": "critical",
+                    "risk_score": 10.0,
+                    "response_logged": False,
+                    "synthetic_response": False,
+                }
+                self._log_synthetic_response_event(flow, flow_id)
+                return
 
         # Get agent-specific config (priority: agent > global > defaults)
         agent_config = _get_agent_config(agent_id)
@@ -492,6 +585,94 @@ class ClawVaultAddon:
             {"Content-Type": "application/json"},
         )
 
+    # ── File Monitor Enforcement ──
+
+    def flag_file_content(self, file_path: str, scan: ScanResult) -> None:
+        """Register sensitive values from a flagged file for proxy-level blocking."""
+        values = {det.value for det in scan.sensitive if det.value}
+        with self._flagged_lock:
+            if values:
+                self._flagged_file_values[file_path] = values
+            else:
+                self._flagged_file_values.pop(file_path, None)
+
+    def unflag_file(self, file_path: str) -> None:
+        """Remove a file from the flagged set (e.g., after user acknowledgment)."""
+        with self._flagged_lock:
+            self._flagged_file_values.pop(file_path, None)
+
+    def _get_all_flagged_values(self) -> set[str]:
+        """Return the union of all currently flagged sensitive values."""
+        with self._flagged_lock:
+            return {v for vals in self._flagged_file_values.values() for v in vals}
+
+    # ── Proxy Pause/Resume ──
+
+    def pause(self, reason: str, event_id: str | None = None) -> None:
+        """Pause the proxy — all intercepted requests will be blocked with 503."""
+        with self._pause_lock:
+            self._paused = True
+            self._pause_reason = reason
+            self._pause_event_id = event_id
+            self._pause_time = time.monotonic()
+        # Cancel any existing auto-resume timer
+        if self._auto_resume_timer:
+            self._auto_resume_timer.cancel()
+        # Start auto-resume timer
+        self._auto_resume_timer = threading.Timer(
+            self._auto_resume_seconds, self._auto_resume,
+        )
+        self._auto_resume_timer.daemon = True
+        self._auto_resume_timer.start()
+        logger.warning("proxy_paused", reason=reason, event_id=event_id,
+                        auto_resume_seconds=self._auto_resume_seconds)
+
+    def _auto_resume(self) -> None:
+        """Auto-resume after timeout."""
+        if self._paused:
+            logger.info("proxy_auto_resumed", after_seconds=self._auto_resume_seconds)
+            self.resume()
+
+    def resume(self) -> None:
+        """Resume normal proxy operation and clear flagged file values."""
+        if self._auto_resume_timer:
+            self._auto_resume_timer.cancel()
+            self._auto_resume_timer = None
+        with self._pause_lock:
+            previous_reason = self._pause_reason
+            self._paused = False
+            self._pause_reason = None
+            self._pause_event_id = None
+            self._pause_time = None
+        with self._flagged_lock:
+            self._flagged_file_values.clear()
+        logger.info("proxy_resumed", previous_reason=previous_reason)
+
+    @property
+    def _is_paused(self) -> bool:
+        return self._paused
+
+    @property
+    def is_paused(self) -> bool:
+        return self._paused
+
+    @property
+    def pause_info(self) -> dict[str, Any] | None:
+        with self._pause_lock:
+            if not self._paused:
+                return None
+            remaining = 0
+            if self._pause_time is not None:
+                elapsed = time.monotonic() - self._pause_time
+                remaining = max(0, self._auto_resume_seconds - int(elapsed))
+            return {
+                "paused": True,
+                "reason": self._pause_reason,
+                "event_id": self._pause_event_id,
+                "remaining_seconds": remaining,
+                "auto_resume_seconds": self._auto_resume_seconds,
+            }
+
     def _should_intercept(self, flow: http.HTTPFlow) -> bool:
         """Check if this flow targets an AI provider we should intercept."""
         host = self._normalize_host(flow.request.pretty_host)
@@ -725,7 +906,7 @@ class ClawVaultAddon:
             user_content=user_content,
         )
         if self.audit_callback:
-            self.audit_callback(record, scan)
+            self.audit_callback(record, scan, body)
 
     def _log_transaction_event(
         self,

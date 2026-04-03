@@ -54,3 +54,47 @@ openclaw:
     watch_debounce_ms: 250
     watch_step_ms: 50
     processing_retries: 3
+
+file_monitor:
+  enabled: true
+  watch_home_sensitive: true
+  watch_patterns:
+    - ".env"
+    - ".env.*"
+    - "*.pem"
+    - "*.key"
+    - "*.p12"
+    - "*.pfx"
+    - "secrets.yaml"
+    - "secrets.json"
+    - "credentials.json"
+    - "service-account*.json"
+    - "id_rsa"
+    - "id_ed25519"
+  scan_content_on_change: true
+  max_file_size_kb: 512
+  alert_on_delete: true
+  alert_on_create: true
+  alert_on_modify: true
+
+# Custom guard rules (previously in rules.yaml)
+# Example:
+# rules:
+#   - id: block-injections
+#     name: Block all prompt injections
+#     enabled: true
+#     action: block
+#     when:
+#       has_injections: true
+rules: []
+
+# Per-agent overrides (previously in agents.yaml)
+agents:
+  version: "1.0"
+  entries: {}
+
+# Vault presets (configuration scenarios)
+vaults:
+  version: "1.0"
+  presets: []  # Auto-populated with builtin presets on first load
+

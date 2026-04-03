@@ -43,7 +43,7 @@ class TestSensitiveDetector:
         assert len(results) >= 1
 
     def test_detect_github_token(self, sensitive_detector):
-        text = "token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh"
+        text = "token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
         results = sensitive_detector.detect(text)
         assert len(results) >= 1
         assert any(r.category == PatternCategory.API_KEY for r in results)
@@ -91,3 +91,42 @@ class TestSensitiveDetector:
         # Should not have duplicate detections for the same position
         positions = [(r.start, r.end) for r in results]
         assert len(positions) == len(set(positions))
+
+    def test_engine_respects_disabled_detection(self, detection_engine):
+        text = 'password = "MyS3cretP@ssw0rd"'
+        result = detection_engine.scan_full(
+            text,
+            detection_config={
+                "enabled": False,
+                "api_keys": True,
+                "passwords": True,
+                "dangerous_commands": True,
+                "prompt_injection": True,
+            },
+        )
+        assert result.has_threats is False
+
+    def test_engine_returns_no_sensitive_matches_when_all_sensitive_categories_disabled(
+        self, detection_engine
+    ):
+        text = 'password = "MyS3cretP@ssw0rd"'
+        result = detection_engine.scan_full(
+            text,
+            detection_config={
+                "enabled": True,
+                "api_keys": False,
+                "aws_credentials": False,
+                "blockchain": False,
+                "passwords": False,
+                "private_ips": False,
+                "pii": False,
+                "jwt_tokens": False,
+                "ssh_keys": False,
+                "credit_cards": False,
+                "emails": False,
+                "generic_secrets": False,
+                "dangerous_commands": False,
+                "prompt_injection": False,
+            },
+        )
+        assert result.has_threats is False

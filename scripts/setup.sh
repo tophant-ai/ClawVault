@@ -49,7 +49,6 @@ if [ -f "$SERVICE_FILE" ]; then
     awk '
     /^\[Service\]/ {
         print $0
-        print "Environment=ALL_PROXY=socks5://127.0.0.1:1080"
         print "Environment=HTTP_PROXY=http://127.0.0.1:8765"
         print "Environment=HTTPS_PROXY=http://127.0.0.1:8765"
         print "Environment=NO_PROXY=localhost,127.0.0.1"
@@ -86,6 +85,7 @@ echo "========================"
 echo "✅ Setup complete!"
 echo ""
 echo "Next steps:"
-echo "  1. Start:  ./scripts/start.sh"
-echo "  2. Test:   ./scripts/test.sh"
-echo "  3. Visit:  http://<server-ip>:8766"
+echo "  1. Restart OpenClaw:  systemctl --user restart openclaw-gateway"
+echo "  2. Start ClawVault:   ./scripts/start.sh"
+echo "  3. Test:              ./scripts/test.sh"
+echo "  4. Visit:             http://<server-ip>:8766"

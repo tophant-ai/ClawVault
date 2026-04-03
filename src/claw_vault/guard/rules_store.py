@@ -1,41 +1,43 @@
 """Persistence and data models for custom guard rules.
 
-Rules are stored in a YAML file under the ClawVault config directory:
-`~/.ClawVault/rules.yaml`.
+Rules are stored in the unified config file under the ``rules`` key:
+``~/.ClawVault/config.yaml``.
 
 The format is intentionally simple and human-friendly, for example:
 
 ```yaml
-- id: block-injections
-  name: Block all prompt injections
-  enabled: true
-  action: block
-  when:
-    has_injections: true
+rules:
+  - id: block-injections
+    name: Block all prompt injections
+    enabled: true
+    action: block
+    when:
+      has_injections: true
 
-- id: sanitize-sensitive
-  name: Auto-sanitize sensitive data above risk 5
-  enabled: true
-  action: sanitize
-  when:
-    has_sensitive: true
-    min_risk_score: 5.0
+  - id: sanitize-sensitive
+    name: Auto-sanitize sensitive data above risk 5
+    enabled: true
+    action: sanitize
+    when:
+      has_sensitive: true
+      min_risk_score: 5.0
 ```
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import structlog
 import yaml
 from pydantic import BaseModel, Field
 
-from claw_vault.config import DEFAULT_CONFIG_DIR
+from claw_vault.config import DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_FILE
 
 logger = structlog.get_logger()
 
+# Legacy path — kept only for migration detection in config.py.
 RULES_FILE: Path = DEFAULT_CONFIG_DIR / "rules.yaml"
 
 
@@ -59,7 +61,7 @@ class RuleCondition(BaseModel):
 
 
 class RuleConfig(BaseModel):
-    """Single rule definition stored in rules.yaml."""
+    """Single rule definition stored in config.yaml under the ``rules`` key."""
 
     id: str
     name: str
@@ -81,26 +83,52 @@ class RuleConfig(BaseModel):
     source: str = "user"
 
 
-def load_rules(path: Path | None = None) -> list[RuleConfig]:
-    """Load rules from YAML. Returns an empty list on any error."""
-    rules_path = path or RULES_FILE
+def load_rules(
+    path: Path | None = None,
+    raw_rules: list[dict] | None = None,
+) -> list[RuleConfig]:
+    """Load rules from the unified config or from an explicit list of dicts.
+
+    *raw_rules*: if provided, parse these dicts directly (used when
+    the caller already has ``Settings.rules`` in memory).
+
+    *path*: if given, read this YAML file; extract the ``rules`` key if the
+    root is a dict, or treat the whole file as a list (legacy format).
+    """
+    if raw_rules is not None:
+        return _parse_rule_dicts(raw_rules)
+
+    rules_path = path or DEFAULT_CONFIG_FILE
     if not rules_path.exists():
         return []
 
     try:
-        raw = yaml.safe_load(rules_path.read_text(encoding="utf-8")) or []
+        raw = yaml.safe_load(rules_path.read_text(encoding="utf-8")) or {}
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.warning("guard.rules.load_failed", path=str(rules_path), error=str(exc))
         return []
 
-    if not isinstance(raw, list):
-        logger.warning(
-            "guard.rules.invalid_format", path=str(rules_path), detail="root is not a list"
-        )
-        return []
+    # Unified config: rules is a key in the dict
+    if isinstance(raw, dict):
+        entries = raw.get("rules", [])
+        if not isinstance(entries, list):
+            return []
+        return _parse_rule_dicts(entries)
 
+    # Legacy format: root is a list
+    if isinstance(raw, list):
+        return _parse_rule_dicts(raw)
+
+    logger.warning(
+        "guard.rules.invalid_format", path=str(rules_path), detail="unexpected root type"
+    )
+    return []
+
+
+def _parse_rule_dicts(entries: list) -> list[RuleConfig]:
+    """Validate a list of raw dicts into ``RuleConfig`` objects."""
     items: list[RuleConfig] = []
-    for entry in raw:
+    for entry in entries:
         if not isinstance(entry, dict):
             continue
         try:
@@ -111,17 +139,31 @@ def load_rules(path: Path | None = None) -> list[RuleConfig]:
 
 
 def save_rules(rules: list[RuleConfig], path: Path | None = None) -> None:
-    """Persist rules to YAML. Best-effort with warning logs on failure."""
-    rules_path = path or RULES_FILE
+    """Persist rules into the unified config file.
+
+    Reads the full config, replaces the ``rules`` key, and writes it back.
+    """
+    config_path = path or DEFAULT_CONFIG_FILE
+
     try:
-        rules_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Read existing config to preserve all other sections
+        existing: dict = {}
+        if config_path.exists():
+            existing = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            if not isinstance(existing, dict):
+                existing = {}
+
         as_dicts = [r.model_dump(exclude_none=True) for r in rules]
-        rules_path.write_text(
-            yaml.safe_dump(as_dicts, sort_keys=False, allow_unicode=True),
+        existing["rules"] = as_dicts
+
+        config_path.write_text(
+            yaml.safe_dump(existing, sort_keys=False, allow_unicode=True),
             encoding="utf-8",
         )
     except Exception as exc:  # pragma: no cover - defensive logging
-        logger.warning("guard.rules.save_failed", path=str(rules_path), error=str(exc))
+        logger.warning("guard.rules.save_failed", path=str(config_path), error=str(exc))
 
 
 def export_rules(rules: list[RuleConfig]) -> list[dict]:

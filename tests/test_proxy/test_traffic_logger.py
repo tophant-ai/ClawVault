@@ -189,3 +189,32 @@ def test_addon_aggregates_sse_response_before_logging(
 
     assert entry["response"]["body"] == "Hello world"
     assert entry["response"]["returned_body"] == "Hello world"
+
+
+def test_addon_intercepts_openrouter_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "claw_vault.proxy.interceptor._get_agent_config",
+        lambda agent_id: {"enabled": True, "guard_mode": "strict", "auto_sanitize": False},
+    )
+
+    addon = ClawVaultAddon(
+        rule_engine=RuleEngine(mode="strict", auto_sanitize=False),
+        token_counter=TokenCounter(),
+        intercept_hosts=["openrouter.ai"],
+    )
+    request_body = json.dumps(
+        {"model": "openai/gpt-4o", "messages": [{"role": "user", "content": "password=Secret123"}]}
+    )
+    flow = _DummyFlow(
+        request=_DummyRequest(
+            _text=request_body,
+            pretty_url="https://openrouter.ai/api/v1/chat/completions",
+            pretty_host="openrouter.ai",
+            headers={"Content-Type": "application/json"},
+        )
+    )
+
+    addon.request(flow)
+
+    assert flow.response is not None
+    assert flow.response.status_code == 403

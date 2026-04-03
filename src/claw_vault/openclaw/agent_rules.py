@@ -9,7 +9,7 @@ from typing import Any
 
 import structlog
 
-from claw_vault.config import DEFAULT_AGENTS_FILE, DEFAULT_CONFIG_FILE
+from claw_vault.config import DEFAULT_CONFIG_FILE
 
 logger = structlog.get_logger()
 
@@ -42,19 +42,17 @@ class AgentRedactionPolicy:
 
 
 class AgentRuleResolver:
-    """Load agent-specific policy from persisted dashboard config files."""
+    """Load agent-specific policy from the unified config file."""
 
     def __init__(
         self,
         global_detection_config: dict[str, bool] | None = None,
-        agents_file: Path = DEFAULT_AGENTS_FILE,
         config_file: Path = DEFAULT_CONFIG_FILE,
     ) -> None:
         self._default_detection_config = {
             **DEFAULT_DETECTION_CONFIG,
             **(global_detection_config or {}),
         }
-        self._agents_file = agents_file.expanduser()
         self._config_file = config_file.expanduser()
         self._lock = threading.Lock()
         self._agents: dict[str, dict[str, Any]] = {}
@@ -63,7 +61,6 @@ class AgentRuleResolver:
         self._global_enabled = True
         self._global_custom_patterns: list[str] = []
         self._global_detection_overrides: dict[str, bool] = {}
-        self._agents_loaded_mtime_ns = -1
         self._config_loaded_mtime_ns = -1
 
     def resolve_policy(self, agent_id: str) -> AgentRedactionPolicy:
@@ -109,10 +106,10 @@ class AgentRuleResolver:
         return None
 
     def _reload_if_needed(self) -> None:
-        self._reload_global_config()
-        self._reload_agents()
+        self._reload_config()
 
-    def _reload_global_config(self) -> None:
+    def _reload_config(self) -> None:
+        """Reload global config and agents from the unified config file."""
         if not self._config_file.exists():
             with self._lock:
                 self._config_loaded_mtime_ns = -1
@@ -121,6 +118,7 @@ class AgentRuleResolver:
                 self._global_enabled = True
                 self._global_custom_patterns = []
                 self._global_detection_overrides = {}
+                self._agents = {}
             return
 
         try:
@@ -147,6 +145,10 @@ class AgentRuleResolver:
         detection = payload.get("detection", {}) if isinstance(payload, dict) else {}
         guard = payload.get("guard", {}) if isinstance(payload, dict) else {}
 
+        # Extract agents from unified config
+        agents_section = payload.get("agents", {}) if isinstance(payload, dict) else {}
+        entries = agents_section.get("entries", {}) if isinstance(agents_section, dict) else {}
+
         with self._lock:
             self._global_enabled = bool(detection.get("enabled", True))
             self._global_guard_mode = str(guard.get("mode", "permissive")) or "permissive"
@@ -155,44 +157,8 @@ class AgentRuleResolver:
                 detection.get("custom_patterns")
             )
             self._global_detection_overrides = self._extract_detection_overrides(detection)
+            self._agents = entries if isinstance(entries, dict) else {}
             self._config_loaded_mtime_ns = stat_result.st_mtime_ns
-
-    def _reload_agents(self) -> None:
-        if not self._agents_file.exists():
-            with self._lock:
-                self._agents = {}
-                self._agents_loaded_mtime_ns = -1
-            return
-
-        try:
-            stat_result = self._agents_file.stat()
-        except OSError as exc:
-            logger.warning(
-                "openclaw_agents_stat_failed", path=str(self._agents_file), error=str(exc)
-            )
-            return
-
-        if stat_result.st_mtime_ns == self._agents_loaded_mtime_ns:
-            return
-
-        try:
-            import yaml
-
-            payload = yaml.safe_load(self._agents_file.read_text(encoding="utf-8")) or {}
-        except Exception as exc:
-            logger.warning(
-                "openclaw_agents_load_failed", path=str(self._agents_file), error=str(exc)
-            )
-            return
-
-        agents = payload.get("agents", {})
-        if not isinstance(agents, dict):
-            logger.warning("openclaw_agents_invalid", path=str(self._agents_file))
-            return
-
-        with self._lock:
-            self._agents = agents
-            self._agents_loaded_mtime_ns = stat_result.st_mtime_ns
 
     def _load_global_detection(self) -> dict[str, bool]:
         overrides = getattr(self, "_global_detection_overrides", {})

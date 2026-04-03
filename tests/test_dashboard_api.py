@@ -163,3 +163,43 @@ def test_persist_config_writes_safe_yaml_for_path_values(
     assert payload["openclaw"]["session_redaction"]["state_file"] == str(
         settings.openclaw.session_redaction.state_file
     )
+
+
+def test_run_scan_returns_block_action_for_strict_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    from claw_vault.guard.rule_engine import RuleEngine
+
+    # Use a clean rule engine without custom rules so strict-mode logic is exercised
+    clean_re = RuleEngine()
+    clean_re.set_rules([])
+    monkeypatch.setattr(dashboard_api, "_rule_engine", clean_re)
+    monkeypatch.setattr(
+        dashboard_api,
+        "get_agent_config",
+        lambda agent_id: {
+            "enabled": True,
+            "guard_mode": "strict",
+            "auto_sanitize": True,
+            "detection": {
+                "enabled": True,
+                "api_keys": True,
+                "aws_credentials": True,
+                "blockchain": True,
+                "passwords": True,
+                "private_ips": True,
+                "pii": True,
+                "jwt_tokens": True,
+                "ssh_keys": True,
+                "credit_cards": True,
+                "emails": True,
+                "generic_secrets": True,
+                "dangerous_commands": True,
+                "prompt_injection": True,
+            },
+        },
+    )
+
+    result = dashboard_api._run_scan("password=MyS3cretP@ssw0rd")
+
+    assert result["has_threats"] is True
+    assert result["action"] == "block"
+    assert "Strict mode" in result["reason"]

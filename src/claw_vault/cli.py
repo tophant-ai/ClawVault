@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 from rich.console import Console
@@ -13,7 +14,7 @@ from rich.table import Table
 from rich.text import Text
 
 from claw_vault import __version__
-from claw_vault.config import Settings, load_settings
+from claw_vault.config import Settings, load_settings, save_settings, DEFAULT_CONFIG_FILE
 
 
 def version_callback(value: bool):
@@ -95,8 +96,12 @@ async def _run_services(settings: Settings):
     import uvicorn
 
     from claw_vault.audit.store import AuditStore
-    from claw_vault.dashboard.api import push_proxy_event, set_dependencies
+    from claw_vault.dashboard.api import push_file_monitor_event, push_local_scan_event, push_proxy_event, set_dependencies
     from claw_vault.dashboard.app import create_app
+    from claw_vault.detector.engine import ScanResult, ThreatLevel
+    from claw_vault.file_monitor.service import FileMonitorService
+    from claw_vault.local_scan.scanner import LocalScanner
+    from claw_vault.local_scan.scheduler import ScanScheduler
     from claw_vault.monitor.budget import BudgetManager
     from claw_vault.proxy.server import ProxyServer
 
@@ -118,10 +123,10 @@ async def _run_services(settings: Settings):
     )
 
     # Wire audit callback (thread-safe bridge: sync mitmproxy thread → async main loop)
-    async def audit_callback(record, scan=None):
+    async def audit_callback(record, scan=None, request_body=None):
         await audit_store.log(record)
-        # Push to dashboard scan history so proxy events are visible on the UI
-        push_proxy_event(record, scan)
+        if settings.dashboard.enabled:
+            push_proxy_event(record, scan, request_body=request_body)
 
     main_loop = asyncio.get_running_loop()
     proxy.set_audit_callback(audit_callback, main_loop)
@@ -130,6 +135,54 @@ async def _run_services(settings: Settings):
     proxy.start()
     console.print("[green]✓[/green] Proxy started")
     console.print("[green]✓[/green] Audit callback wired (records will be stored)")
+
+    # Start file monitor
+    file_monitor = FileMonitorService(
+        config=settings.file_monitor,
+        detection_engine=proxy.detection_engine,
+        file_manager=None,
+        guard_mode=settings.guard.mode,
+    )
+    file_monitor.set_event_callback(push_file_monitor_event)
+
+    # Wire enforcement callback: file monitor → proxy blocking
+    def _enforcement_callback(file_path: str, scan: ScanResult) -> None:
+        proxy.flag_file_content(file_path, scan)
+        # In strict mode, pause proxy for high/critical file threats
+        if (
+            settings.guard.mode == "strict"
+            and scan.has_threats
+            and scan.threat_level in (ThreatLevel.CRITICAL, ThreatLevel.HIGH)
+        ):
+            proxy.pause(
+                reason=f"High-risk file change detected: {Path(file_path).name}",
+            )
+
+    file_monitor.set_enforcement_callback(_enforcement_callback)
+    file_monitor.start()
+    if file_monitor.running:
+        console.print(
+            f"[green]✓[/green] File monitor started (watching {len(file_monitor.watch_roots)} directories)"
+        )
+
+    # Start local scan scheduler
+    local_scanner = LocalScanner(
+        detection_engine=proxy.detection_engine,
+        config=settings.local_scan,
+    )
+    scan_scheduler = ScanScheduler(
+        scanner=local_scanner,
+        config=settings.local_scan,
+        event_callback=push_local_scan_event,
+        history_file=settings.config_dir / "data" / "local_scan_history.jsonl",
+    )
+    if settings.local_scan.enabled:
+        scan_scheduler.start()
+        sched_count = len(scan_scheduler.list_schedules())
+        if sched_count:
+            console.print(f"[green]✓[/green] Local scan scheduler started ({sched_count} scheduled scans)")
+        else:
+            console.print("[green]✓[/green] Local scan scheduler started (no schedules)")
 
     # Start dashboard
     if settings.dashboard.enabled:
@@ -140,6 +193,9 @@ async def _run_services(settings: Settings):
             settings,
             rule_engine=proxy.rule_engine,
             openclaw_service=proxy.openclaw_service,
+            file_monitor_service=file_monitor,
+            proxy_server=proxy,
+            local_scan_scheduler=scan_scheduler,
         )
         dashboard_app = create_app()
 
@@ -165,8 +221,92 @@ async def _run_services(settings: Settings):
         except asyncio.CancelledError:
             pass
 
+    scan_scheduler.stop()
+    file_monitor.stop()
     proxy.stop()
     await audit_store.close()
+
+
+@app.command()
+def stop(
+    proxy_port: int = typer.Option(8765, "--proxy-port", help="Proxy port to identify process"),
+    dashboard_port: int = typer.Option(8766, "--dashboard-port", help="Dashboard port to identify process"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force kill (SIGKILL) if graceful stop fails"),
+):
+    """Stop running ClawVault services."""
+    import signal
+    import subprocess
+    import time
+
+    # Find clawvault processes via pgrep (same approach as stop.sh)
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "clawvault start"],
+            capture_output=True, text=True,
+        )
+        pids = [int(p.strip()) for p in result.stdout.strip().split("\n") if p.strip()]
+    except Exception:
+        pids = []
+
+    # Also check for uvicorn on the dashboard port
+    if not pids:
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", f"uvicorn.*{dashboard_port}"],
+                capture_output=True, text=True,
+            )
+            pids = [int(p.strip()) for p in result.stdout.strip().split("\n") if p.strip()]
+        except Exception:
+            pass
+
+    if not pids:
+        console.print("[yellow]No running ClawVault processes found.[/yellow]")
+        raise typer.Exit(0)
+
+    console.print(f"Found ClawVault process(es): {', '.join(str(p) for p in pids)}")
+
+    # Graceful shutdown (SIGTERM)
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            console.print(f"[red]Permission denied for PID {pid}[/red]")
+
+    console.print("Sending SIGTERM... waiting 3s")
+    time.sleep(3)
+
+    # Check if still running
+    still_running = []
+    for pid in pids:
+        try:
+            os.kill(pid, 0)  # signal 0 = check existence
+            still_running.append(pid)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    if still_running and force:
+        console.print(f"[yellow]Force killing: {still_running}[/yellow]")
+        for pid in still_running:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        time.sleep(1)
+        still_running = []
+        for pid in pids:
+            try:
+                os.kill(pid, 0)
+                still_running.append(pid)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+    if still_running:
+        console.print(f"[red]Processes still running: {still_running}[/red]")
+        console.print("Try [bold]clawvault stop --force[/bold]")
+    else:
+        console.print("[green]✓ ClawVault stopped[/green]")
 
 
 @app.command()
@@ -382,6 +522,9 @@ def config_show(
         "dashboard": settings.dashboard.model_dump(mode="json"),
         "cloud": settings.cloud.model_dump(mode="json"),
         "openclaw": settings.openclaw.model_dump(mode="json"),
+        "file_monitor": settings.file_monitor.model_dump(mode="json"),
+        "rules": settings.rules,
+        "agents": settings.agents.model_dump(mode="json"),
     }
     console.print(
         Panel(
@@ -430,6 +573,498 @@ def config_path():
     console.print(f"[bold]Config Directory:[/bold] {DEFAULT_CONFIG_DIR}")
     console.print(f"[bold]Config File:[/bold] {DEFAULT_CONFIG_FILE}")
     console.print(f"[bold]Exists:[/bold] {'Yes' if DEFAULT_CONFIG_FILE.exists() else 'No'}")
+
+
+@config_app.command("set")
+def config_set(
+    key: str = typer.Argument(help="Dotted config key (e.g. guard.mode, detection.pii, monitor.daily_token_budget)"),
+    value: str = typer.Argument(help="New value (true/false for booleans, numbers auto-detected)"),
+    config_file: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+):
+    """Set a configuration value.
+
+    Examples:
+        clawvault config set guard.mode strict
+        clawvault config set detection.pii true
+        clawvault config set monitor.daily_token_budget 100000
+        clawvault config set proxy.port 9000
+    """
+    import yaml
+
+    path = config_file or DEFAULT_CONFIG_FILE
+    settings = load_settings(config_file)
+
+    # Parse the dotted key
+    parts = key.split(".")
+    if len(parts) < 2:
+        console.print("[red]Error: Key must be dotted, e.g. 'guard.mode'[/red]")
+        raise typer.Exit(1)
+
+    # Convert value to appropriate type
+    parsed_value: Any = value
+    if value.lower() == "true":
+        parsed_value = True
+    elif value.lower() == "false":
+        parsed_value = False
+    else:
+        try:
+            parsed_value = int(value)
+        except ValueError:
+            try:
+                parsed_value = float(value)
+            except ValueError:
+                pass  # keep as string
+
+    # Navigate to the right config section and set the value
+    section_name = parts[0]
+    field_name = ".".join(parts[1:]) if len(parts) == 2 else parts[-1]
+
+    # Get the section object from settings
+    section_map = {
+        "proxy": settings.proxy,
+        "detection": settings.detection,
+        "guard": settings.guard,
+        "monitor": settings.monitor,
+        "audit": settings.audit,
+        "dashboard": settings.dashboard,
+        "cloud": settings.cloud,
+        "file_monitor": settings.file_monitor,
+        "local_scan": settings.local_scan,
+    }
+
+    if section_name not in section_map:
+        console.print(f"[red]Error: Unknown section '{section_name}'[/red]")
+        console.print(f"Available: {', '.join(section_map.keys())}")
+        raise typer.Exit(1)
+
+    section = section_map[section_name]
+    field = parts[1] if len(parts) >= 2 else None
+
+    if field and hasattr(section, field):
+        old_value = getattr(section, field)
+        try:
+            setattr(section, field, parsed_value)
+        except Exception as exc:
+            console.print(f"[red]Error setting value: {exc}[/red]")
+            raise typer.Exit(1)
+
+        save_settings(settings, path)
+        console.print(f"[green]✓[/green] {key}: {old_value} → {parsed_value}")
+        console.print(f"[dim]Saved to {path}[/dim]")
+    else:
+        console.print(f"[red]Error: Unknown field '{field}' in section '{section_name}'[/red]")
+        fields = [f for f in section.model_fields.keys()]
+        console.print(f"Available fields: {', '.join(fields)}")
+        raise typer.Exit(1)
+
+
+@config_app.command("get")
+def config_get(
+    key: str = typer.Argument(help="Dotted config key (e.g. guard.mode, detection.pii)"),
+    config_file: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+):
+    """Get a configuration value.
+
+    Examples:
+        clawvault config get guard.mode
+        clawvault config get detection.pii
+        clawvault config get proxy.port
+    """
+    settings = load_settings(config_file)
+
+    parts = key.split(".")
+    if len(parts) < 2:
+        console.print("[red]Error: Key must be dotted, e.g. 'guard.mode'[/red]")
+        raise typer.Exit(1)
+
+    section_map = {
+        "proxy": settings.proxy,
+        "detection": settings.detection,
+        "guard": settings.guard,
+        "monitor": settings.monitor,
+        "audit": settings.audit,
+        "dashboard": settings.dashboard,
+        "cloud": settings.cloud,
+        "file_monitor": settings.file_monitor,
+        "local_scan": settings.local_scan,
+    }
+
+    section_name = parts[0]
+    if section_name not in section_map:
+        console.print(f"[red]Error: Unknown section '{section_name}'[/red]")
+        raise typer.Exit(1)
+
+    section = section_map[section_name]
+    field = parts[1] if len(parts) >= 2 else None
+
+    if field and hasattr(section, field):
+        value = getattr(section, field)
+        console.print(f"{key} = {value}")
+    else:
+        console.print(f"[red]Error: Unknown field '{field}' in section '{section_name}'[/red]")
+        raise typer.Exit(1)
+
+# ── Vault subcommands ──────────────────────────────────────────
+
+vault_app = typer.Typer(help="Manage ClawVault vault presets")
+app.add_typer(vault_app, name="vault")
+
+
+@vault_app.command("list")
+def vault_list(
+    config_file: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+    json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
+):
+    """List all vault presets."""
+    import json
+
+    settings = load_settings(config_file)
+    presets = settings.vaults.presets
+
+    if not presets:
+        console.print("[yellow]No vault presets configured.[/yellow]")
+        return
+
+    if json_output:
+        data = [p.model_dump(mode="json") for p in presets]
+        console.print(json.dumps(data, indent=2, ensure_ascii=False))
+        return
+
+    table = Table(title="Vault Presets", show_header=True)
+    table.add_column("ID", style="cyan")
+    table.add_column("Name", style="bold")
+    table.add_column("Icon")
+    table.add_column("Type", style="dim")
+    table.add_column("Guard Mode", style="green")
+    table.add_column("Description")
+
+    for p in presets:
+        guard_mode = p.guard.get("mode", "?")
+        preset_type = "builtin" if p.builtin else "custom"
+        table.add_row(p.id, p.name, p.icon, preset_type, guard_mode, p.description[:50])
+
+    console.print(table)
+    console.print(f"\nTotal: {len(presets)} presets")
+    console.print("Use [bold]clawvault vault apply <id>[/bold] to apply a preset")
+
+
+@vault_app.command("apply")
+def vault_apply(
+    preset_id: str = typer.Argument(help="Preset ID to apply (e.g. full-lockdown, file-protection)"),
+    config_file: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+):
+    """Apply a vault preset to the active configuration.
+
+    This updates detection, guard, file_monitor, and rules settings.
+
+    Examples:
+        clawvault vault apply full-lockdown
+        clawvault vault apply file-protection
+        clawvault vault apply privacy-shield
+    """
+    path = config_file or DEFAULT_CONFIG_FILE
+    settings = load_settings(config_file)
+
+    # Find the preset
+    preset = None
+    for p in settings.vaults.presets:
+        if p.id == preset_id:
+            preset = p
+            break
+
+    if not preset:
+        console.print(f"[red]Error: Preset '{preset_id}' not found[/red]")
+        console.print("Available presets:")
+        for p in settings.vaults.presets:
+            console.print(f"  - {p.id} ({p.name})")
+        raise typer.Exit(1)
+
+    # Apply detection config
+    detection_data = preset.detection
+    for key, val in detection_data.items():
+        if hasattr(settings.detection, key):
+            setattr(settings.detection, key, val)
+
+    # Apply guard config
+    guard_data = preset.guard
+    for key, val in guard_data.items():
+        if hasattr(settings.guard, key):
+            setattr(settings.guard, key, val)
+
+    # Apply file_monitor config
+    fm_data = preset.file_monitor
+    for key, val in fm_data.items():
+        if hasattr(settings.file_monitor, key):
+            setattr(settings.file_monitor, key, val)
+
+    # Apply rules
+    settings.rules = list(preset.rules)
+
+    # Save
+    save_settings(settings, path)
+
+    console.print(f"[green]✓[/green] Applied preset: {preset.icon} {preset.name}")
+    console.print(f"  Guard mode: [bold]{settings.guard.mode}[/bold]")
+    console.print(f"  Detection: {sum(1 for k, v in detection_data.items() if v is True and k != 'enabled')}/{len([k for k in detection_data if k not in ('enabled', 'custom_patterns')])} categories enabled")
+    console.print(f"  File monitor: {'enabled' if settings.file_monitor.enabled else 'disabled'}")
+    console.print(f"  Rules: {len(settings.rules)}")
+    console.print(f"[dim]Saved to {path}[/dim]")
+    console.print()
+    console.print("[yellow]Note:[/yellow] If ClawVault is running, restart it for changes to take effect:")
+    console.print("  [bold]clawvault stop && clawvault start[/bold]")
+
+
+@vault_app.command("show")
+def vault_show(
+    preset_id: str = typer.Argument(help="Preset ID to show details"),
+    config_file: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+):
+    """Show detailed configuration of a vault preset."""
+    import yaml
+
+    settings = load_settings(config_file)
+
+    preset = None
+    for p in settings.vaults.presets:
+        if p.id == preset_id:
+            preset = p
+            break
+
+    if not preset:
+        console.print(f"[red]Error: Preset '{preset_id}' not found[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"\n{preset.icon} [bold]{preset.name}[/bold] ({preset.id})")
+    console.print(f"[dim]{preset.description}[/dim]")
+    console.print(f"Type: {'builtin' if preset.builtin else 'custom'}\n")
+
+    data = {
+        "detection": preset.detection,
+        "guard": preset.guard,
+        "file_monitor": preset.file_monitor,
+        "rules": preset.rules,
+    }
+    console.print(Panel(
+        yaml.safe_dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False),
+        title="[bold green]Preset Configuration[/bold green]",
+        border_style="green",
+    ))
+
+
+# ── Local Scan subcommands ─────────────────────────────────────
+
+local_scan_app = typer.Typer(help="Local filesystem security scanning")
+app.add_typer(local_scan_app, name="local-scan")
+
+
+@local_scan_app.command("run")
+def local_scan_run(
+    scan_type: str = typer.Option(
+        "credential",
+        "--type", "-t",
+        help="Scan type: credential | vulnerability | skill_audit",
+    ),
+    path: str = typer.Option(
+        str(Path.home()),
+        "--path", "-p",
+        help="Directory to scan",
+    ),
+    max_files: int = typer.Option(100, "--max-files", help="Maximum files to scan"),
+    config_file: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+):
+    """Run an on-demand local scan."""
+    from claw_vault.local_scan.models import ScanType as ST
+    from claw_vault.local_scan.scanner import LocalScanner
+
+    settings = load_settings(config_file)
+    scanner = LocalScanner(config=settings.local_scan)
+
+    try:
+        st = ST(scan_type)
+    except ValueError:
+        console.print(f"[red]Error: Invalid scan type '{scan_type}'[/red]")
+        console.print("Valid types: credential, vulnerability, skill_audit")
+        raise typer.Exit(1)
+
+    console.print(f"Scanning: [bold]{path}[/bold] (type: {scan_type})")
+    result = scanner.run_scan(st, path, max_files)
+
+    if result.status.value == "failed":
+        console.print(f"[red]Scan failed: {result.error}[/red]")
+        raise typer.Exit(1)
+
+    if not result.findings:
+        console.print(f"\n[green]No findings.[/green] Scanned {result.files_scanned} files in {result.duration_seconds}s")
+        return
+
+    table = Table(title=f"Local Scan Results ({scan_type})", show_header=True)
+    table.add_column("File", style="cyan", max_width=40)
+    table.add_column("Type", style="yellow")
+    table.add_column("Description", style="white")
+    table.add_column("Risk", style="red", justify="right")
+
+    for f in sorted(result.findings, key=lambda x: x.risk_score, reverse=True):
+        table.add_row(f.file_path, f.finding_type, f.description[:60], f"{f.risk_score:.1f}")
+
+    console.print(table)
+    console.print(
+        f"\n{result.files_scanned} files scanned, "
+        f"{len(result.findings)} findings, "
+        f"max risk: [bold red]{result.max_risk_score:.1f}[/bold red] "
+        f"({result.threat_level.upper()}), "
+        f"{result.duration_seconds}s"
+    )
+
+
+@local_scan_app.command("schedule-add")
+def local_scan_schedule_add(
+    cron: str = typer.Option(..., "--cron", help='Cron expression, e.g. "0 2 * * *"'),
+    scan_type: str = typer.Option("credential", "--type", "-t", help="Scan type"),
+    path: str = typer.Option(str(Path.home()), "--path", "-p", help="Directory to scan"),
+    max_files: int = typer.Option(100, "--max-files", help="Max files to scan"),
+    config_file: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+):
+    """Add a scheduled local scan.
+
+    Examples:
+        clawvault local-scan schedule-add --cron "0 2 * * *" --type credential --path /home/user
+        clawvault local-scan schedule-add --cron "0 */6 * * *" --type vulnerability
+    """
+    from croniter import croniter
+
+    from claw_vault.local_scan.models import ScanSchedule, ScanType as ST
+
+    if not croniter.is_valid(cron):
+        console.print(f"[red]Error: Invalid cron expression: {cron}[/red]")
+        raise typer.Exit(1)
+
+    try:
+        ST(scan_type)
+    except ValueError:
+        console.print(f"[red]Error: Invalid scan type '{scan_type}'[/red]")
+        raise typer.Exit(1)
+
+    cfg_path = config_file or DEFAULT_CONFIG_FILE
+    settings = load_settings(config_file)
+
+    schedule = ScanSchedule(cron=cron, scan_type=scan_type, path=path, max_files=max_files)
+    settings.local_scan.schedules.append(schedule.model_dump(mode="json"))
+    save_settings(settings, cfg_path)
+
+    console.print(f"[green]Added schedule:[/green] {schedule.id}")
+    console.print(f"  Cron: {cron}")
+    console.print(f"  Type: {scan_type}")
+    console.print(f"  Path: {path}")
+    console.print(f"[dim]Saved to {cfg_path}[/dim]")
+
+
+@local_scan_app.command("schedule-list")
+def local_scan_schedule_list(
+    config_file: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+):
+    """List all scheduled scans."""
+    settings = load_settings(config_file)
+
+    schedules = settings.local_scan.schedules
+    if not schedules:
+        console.print("[yellow]No scheduled scans configured.[/yellow]")
+        return
+
+    table = Table(title="Scheduled Scans", show_header=True)
+    table.add_column("ID", style="cyan")
+    table.add_column("Cron", style="green")
+    table.add_column("Type", style="yellow")
+    table.add_column("Path")
+    table.add_column("Max Files", justify="right")
+    table.add_column("Enabled")
+
+    for s in schedules:
+        table.add_row(
+            s.get("id", "?"),
+            s.get("cron", "?"),
+            s.get("scan_type", "?"),
+            s.get("path", "?"),
+            str(s.get("max_files", "?")),
+            "[green]Yes[/green]" if s.get("enabled", True) else "[red]No[/red]",
+        )
+
+    console.print(table)
+
+
+@local_scan_app.command("schedule-remove")
+def local_scan_schedule_remove(
+    schedule_id: str = typer.Argument(help="Schedule ID to remove"),
+    config_file: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+):
+    """Remove a scheduled scan."""
+    cfg_path = config_file or DEFAULT_CONFIG_FILE
+    settings = load_settings(config_file)
+
+    before = len(settings.local_scan.schedules)
+    settings.local_scan.schedules = [
+        s for s in settings.local_scan.schedules if s.get("id") != schedule_id
+    ]
+
+    if len(settings.local_scan.schedules) == before:
+        console.print(f"[red]Schedule '{schedule_id}' not found[/red]")
+        raise typer.Exit(1)
+
+    save_settings(settings, cfg_path)
+    console.print(f"[green]Removed schedule: {schedule_id}[/green]")
+
+
+@local_scan_app.command("history")
+def local_scan_history(
+    limit: int = typer.Option(20, "--limit", "-n", help="Number of recent results"),
+    config_file: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+):
+    """Show recent local scan results."""
+    from claw_vault.local_scan.models import LocalScanResult
+
+    settings = load_settings(config_file)
+    history_file = settings.config_dir / "data" / "local_scan_history.jsonl"
+
+    if not history_file.exists():
+        console.print("[yellow]No scan history found.[/yellow]")
+        return
+
+    entries: list[LocalScanResult] = []
+    for line in history_file.read_text(encoding="utf-8").strip().splitlines():
+        if line.strip():
+            try:
+                entries.append(LocalScanResult.model_validate_json(line))
+            except Exception:
+                continue
+
+    entries.reverse()
+    entries = entries[:limit]
+
+    if not entries:
+        console.print("[yellow]No scan history found.[/yellow]")
+        return
+
+    table = Table(title="Recent Local Scans", show_header=True)
+    table.add_column("Time", style="dim")
+    table.add_column("Type", style="yellow")
+    table.add_column("Path", max_width=30)
+    table.add_column("Files", justify="right")
+    table.add_column("Findings", justify="right")
+    table.add_column("Risk", style="red", justify="right")
+    table.add_column("Status")
+
+    for e in entries:
+        status_str = "[green]OK[/green]" if e.status.value == "completed" else f"[red]{e.status.value}[/red]"
+        table.add_row(
+            e.timestamp[:19],
+            e.scan_type.value,
+            e.path[:30],
+            str(e.files_scanned),
+            str(len(e.findings)),
+            f"{e.max_risk_score:.1f}" if e.max_risk_score else "-",
+            status_str,
+        )
+
+    console.print(table)
 
 
 # ── Skill subcommands ──────────────────────────────────────────
@@ -515,7 +1150,7 @@ def skill_export():
 
 def _show_banner():
     banner = Text()
-    banner.append("🛡️ ClawVault", style="bold green")
+    banner.append("ClawVault", style="bold green")
     banner.append(f" v{__version__}\n", style="dim")
     banner.append("Physical-level memory isolation vault for AI credentials", style="italic")
     console.print(Panel(banner, border_style="green"))

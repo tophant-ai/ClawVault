@@ -8,7 +8,6 @@ from claw_vault.openclaw.agent_rules import AgentRuleResolver
 
 
 def test_resolve_policy_agent_override_expected_merge(tmp_path: Path) -> None:
-    agents_file = tmp_path / "agents.yaml"
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         """
@@ -19,25 +18,20 @@ detection:
 guard:
   mode: strict
   auto_sanitize: true
-""".strip(),
-        encoding="utf-8",
-    )
-    agents_file.write_text(
-        """
-version: "1.0"
 agents:
-  builder:
-    name: builder
-    guard_mode: permissive
-    detection:
-      passwords: false
-      emails: true
+  version: "1.0"
+  entries:
+    builder:
+      name: builder
+      guard_mode: permissive
+      detection:
+        passwords: false
+        emails: true
 """.strip(),
         encoding="utf-8",
     )
     resolver = AgentRuleResolver(
         global_detection_config={"passwords": True, "emails": False},
-        agents_file=agents_file,
         config_file=config_file,
     )
 
@@ -65,7 +59,6 @@ guard:
     )
     resolver = AgentRuleResolver(
         global_detection_config={"passwords": True, "emails": False},
-        agents_file=tmp_path / "missing.yaml",
         config_file=config_file,
     )
 

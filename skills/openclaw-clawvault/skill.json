@@ -1,0 +1,85 @@
+{
+  "name": "openclaw-clawvault",
+  "version": "0.1.0",
+  "description": "Operate ClawVault services, configuration, vault presets, scanning, and local filesystem security scans from OpenClaw agents.",
+  "author": "Tophant SPAI Lab",
+  "homepage": "https://github.com/tophant-ai/ClawVault",
+  "repository": "https://github.com/tophant-ai/ClawVault",
+  "main": "clawvault_ops.py",
+  "permissions": ["execute_command", "write_files", "read_files", "network"],
+  "permissions_rationale": {
+    "execute_command": "Required to start/stop ClawVault services and run scans",
+    "write_files": "Writes configuration and schedule changes to ~/.ClawVault/",
+    "read_files": "Reads configuration, vault presets, scan history from ~/.ClawVault/",
+    "network": "Probes service ports and communicates with dashboard API"
+  },
+  "tags": ["security", "operations", "proxy", "scanning", "vault", "config"],
+  "requirements": ["pyyaml", "requests"],
+  "python_version": ">=3.10",
+  "commands": {
+    "start": {
+      "description": "Start ClawVault proxy and dashboard services",
+      "usage": "start [--port 8765] [--dashboard-port 8766] [--mode permissive|interactive|strict] [--no-dashboard]"
+    },
+    "stop": {
+      "description": "Stop running ClawVault services",
+      "usage": "stop [--force]"
+    },
+    "status": {
+      "description": "Check if ClawVault proxy and dashboard are running",
+      "usage": "status [--proxy-port 8765] [--dashboard-port 8766]"
+    },
+    "scan": {
+      "description": "Scan text for sensitive data, prompt injection, and dangerous commands",
+      "usage": "scan <text>"
+    },
+    "scan-file": {
+      "description": "Scan a file for sensitive data",
+      "usage": "scan-file <file_path>"
+    },
+    "config-show": {
+      "description": "Show current ClawVault configuration",
+      "usage": "config-show [--config <path>]"
+    },
+    "config-get": {
+      "description": "Get a configuration value by dotted key",
+      "usage": "config-get <key>"
+    },
+    "config-set": {
+      "description": "Set a configuration value by dotted key",
+      "usage": "config-set <key> <value>"
+    },
+    "vault-list": {
+      "description": "List all vault presets",
+      "usage": "vault-list"
+    },
+    "vault-show": {
+      "description": "Show vault preset details",
+      "usage": "vault-show <preset_id>"
+    },
+    "vault-apply": {
+      "description": "Apply a vault preset to active configuration",
+      "usage": "vault-apply <preset_id>"
+    },
+    "local-scan": {
+      "description": "Run an on-demand local filesystem scan",
+      "usage": "local-scan [--type credential|vulnerability|skill_audit] [--path <dir>] [--max-files 100]"
+    },
+    "scan-schedule-add": {
+      "description": "Add a cron-scheduled local scan",
+      "usage": "scan-schedule-add --cron <expr> [--type credential] [--path <dir>]"
+    },
+    "scan-schedule-list": {
+      "description": "List all scheduled scans",
+      "usage": "scan-schedule-list"
+    },
+    "scan-schedule-remove": {
+      "description": "Remove a scheduled scan by ID",
+      "usage": "scan-schedule-remove <schedule_id>"
+    },
+    "scan-history": {
+      "description": "Show recent local scan results",
+      "usage": "scan-history [--limit 20]"
+    }
+  }
+}

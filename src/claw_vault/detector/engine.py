@@ -128,13 +128,18 @@ class DetectionEngine:
 
     def scan_full(self, text: str, detection_config: dict[str, bool] | None = None) -> ScanResult:
         """Run all detectors on the given text."""
-        sensitive = self._filter_sensitive(self.sensitive_detector.detect(text), detection_config)
+        detection_enabled = detection_config is None or detection_config.get("enabled", True)
+
+        sensitive = []
         commands = []
-        if detection_config is None or detection_config.get("dangerous_commands", True):
-            commands = self.command_detector.detect(text)
         injections = []
-        if detection_config is None or detection_config.get("prompt_injection", True):
-            injections = self.injection_detector.detect(text)
+
+        if detection_enabled:
+            sensitive = self._filter_sensitive(self.sensitive_detector.detect(text), detection_config)
+            if detection_config is None or detection_config.get("dangerous_commands", True):
+                commands = self.command_detector.detect(text)
+            if detection_config is None or detection_config.get("prompt_injection", True):
+                injections = self.injection_detector.detect(text)
 
         result = ScanResult(
             sensitive=sensitive,
@@ -161,6 +166,6 @@ class DetectionEngine:
                 enabled_categories.update(DETECTION_CONFIG_TO_CATEGORIES[config_key])
 
         if not enabled_categories:
-            return results
+            return []
 
         return [result for result in results if result.category in enabled_categories]

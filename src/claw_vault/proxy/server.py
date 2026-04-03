@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 import structlog
 
 from claw_vault.config import Settings
-from claw_vault.detector.engine import DetectionEngine
+from claw_vault.detector.engine import DetectionEngine, ScanResult
 from claw_vault.guard.rule_engine import RuleEngine
 from claw_vault.monitor.token_counter import TokenCounter
 from claw_vault.openclaw.service import OpenClawSessionRedactionService
@@ -86,8 +86,12 @@ class ProxyServer:
         ``asyncio.run_coroutine_threadsafe`` to bridge the gap.
         """
 
-        def _threadsafe_callback(record: Any, scan: Any | None = None) -> None:
-            asyncio.run_coroutine_threadsafe(callback(record, scan), main_loop)
+        def _threadsafe_callback(
+            record: Any, scan: Any | None = None, request_body: Any | None = None,
+        ) -> None:
+            asyncio.run_coroutine_threadsafe(
+                callback(record, scan, request_body=request_body), main_loop,
+            )
 
         self.addon.audit_callback = _threadsafe_callback
 
@@ -137,3 +141,31 @@ class ProxyServer:
             self._thread.join(timeout=5)
         self.openclaw_service.stop()
         logger.info("proxy_stopped")
+
+    # ── File Monitor Enforcement Pass-through ──
+
+    def flag_file_content(self, file_path: str, scan: ScanResult) -> None:
+        """Register sensitive values from a flagged file for proxy-level blocking."""
+        self.addon.flag_file_content(file_path, scan)
+
+    def unflag_file(self, file_path: str) -> None:
+        """Remove a file from the flagged set."""
+        self.addon.unflag_file(file_path)
+
+    # ── Proxy Pause/Resume Pass-through ──
+
+    def pause(self, reason: str, event_id: str | None = None) -> None:
+        """Pause the proxy — all intercepted requests will be blocked."""
+        self.addon.pause(reason, event_id)
+
+    def resume(self) -> None:
+        """Resume normal proxy operation."""
+        self.addon.resume()
+
+    @property
+    def is_paused(self) -> bool:
+        return self.addon.is_paused
+
+    @property
+    def pause_info(self) -> dict[str, Any] | None:
+        return self.addon.pause_info
