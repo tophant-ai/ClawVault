@@ -660,6 +660,13 @@ class ClawVaultInstallerSkill(BaseSkill):
                         "api.openai.com",
                         "api.anthropic.com",
                         "api.siliconflow.cn",
+                        "*.openai.azure.com",
+                        "generativelanguage.googleapis.com",
+                        "openrouter.ai",
+                        "dashscope.aliyuncs.com",
+                        "ark.cn-beijing.volces.com",
+                        "api.deepseek.com",
+                        "api.moonshot.cn",
                     ],
                 },
                 "guard": {
@@ -680,8 +687,17 @@ class ClawVaultInstallerSkill(BaseSkill):
                     "host": "0.0.0.0",
                     "port": 8766,
                 },
+                "rules": [],
+                "agents": {
+                    "version": "1.0",
+                    "entries": {},
+                },
+                "vaults": {
+                    "version": "1.0",
+                    "presets": [],
+                },
             }
-            
+
             # Merge custom config
             if config:
                 self._deep_merge(default_config, config)

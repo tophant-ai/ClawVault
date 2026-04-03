@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ClawVault Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
     <script>
         tailwind.config = {
@@ -58,11 +59,11 @@
             </button>
             <button onclick="switchTab('events')" id="nav-events" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
                 <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                Events
+                Audit Log
             </button>
-            <button onclick="switchTab('config')" id="nav-config" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
-                <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                Configuration
+            <button onclick="switchTab('vaults')" id="nav-vaults" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
+                <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                Vaults
             </button>
             <button onclick="switchTab('test')" id="nav-test" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
                 <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
@@ -71,6 +72,10 @@
             <button onclick="switchTab('attacks')" id="nav-attacks" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
                 <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                 Attack Cases
+            </button>
+            <button onclick="switchTab('localscan')" id="nav-localscan" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
+                <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Local Scan
             </button>
         </nav>
         <div class="p-4 border-t border-gray-800/60">
@@ -94,281 +99,329 @@
         </header>
 
         <div class="p-8">
-            <!-- ============ DASHBOARD TAB ============ -->
-            <section id="tab-dashboard" class="tab-content fade-in">
-                <!-- Stats Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
-                    <div class="bg-surface-900 rounded-2xl p-5 border border-gray-800/50 hover:border-gray-700/60 transition-colors">
-                        <div class="flex items-center justify-between mb-3">
-                            <span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Scans</span>
-                            <div class="w-8 h-8 bg-vault-500/10 rounded-lg flex items-center justify-center">
-                                <svg class="w-4 h-4 text-vault-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                            </div>
-                        </div>
-                        <div id="stat-scans" class="text-3xl font-bold text-white">0</div>
-                        <div class="text-xs text-gray-500 mt-1">Total scans today</div>
-                    </div>
-                    <div class="bg-surface-900 rounded-2xl p-5 border border-gray-800/50 hover:border-gray-700/60 transition-colors">
-                        <div class="flex items-center justify-between mb-3">
-                            <span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Threats</span>
-                            <div class="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center">
-                                <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                            </div>
-                        </div>
-                        <div id="stat-threats" class="text-3xl font-bold text-white">0</div>
-                        <div class="text-xs text-gray-500 mt-1">Threats detected</div>
-                    </div>
-                    <div class="bg-surface-900 rounded-2xl p-5 border border-gray-800/50 hover:border-gray-700/60 transition-colors">
-                        <div class="flex items-center justify-between mb-3">
-                            <span class="text-xs font-medium text-gray-500 uppercase tracking-wider">Tokens</span>
-                            <div class="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center">
-                                <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                            </div>
-                        </div>
-                        <div id="stat-tokens" class="text-3xl font-bold text-white">-</div>
-                        <div class="text-xs text-gray-500 mt-1">Tokens used</div>
-                    </div>
-                </div>
-
-                <!-- Budget Bar -->
-                <div class="bg-surface-900 rounded-2xl p-5 border border-gray-800/50 mb-8">
-                    <div class="flex justify-between items-center mb-3">
-                        <span class="text-sm font-medium text-gray-400">Daily Token Budget</span>
-                        <span id="budget-text" class="text-sm text-gray-500 font-mono">0 / 50,000</span>
-                    </div>
-                    <div class="w-full bg-surface-800 rounded-full h-2.5">
-                        <div id="budget-bar" class="bg-gradient-to-r from-vault-600 to-vault-400 h-2.5 rounded-full transition-all duration-500" style="width:0%"></div>
-                    </div>
-                </div>
-
-                <!-- Quick Overview - last 5 events -->
-                <div class="bg-surface-900 rounded-2xl border border-gray-800/50">
-                    <div class="px-6 py-4 border-b border-gray-800/40 flex justify-between items-center">
-                        <h3 class="text-sm font-semibold text-white">Recent Scans</h3>
-                        <button onclick="switchTab('events')" class="text-xs text-vault-500 hover:text-vault-400 font-medium">View All &rarr;</button>
-                    </div>
-                    <div id="dashboard-events" class="divide-y divide-gray-800/40">
-                        <div class="px-6 py-10 text-center text-gray-600 text-sm">No scan history yet. Run a test to get started.</div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- ============ EVENTS TAB ============ -->
-            <section id="tab-events" class="tab-content hidden fade-in">
-                <div class="flex items-center justify-between mb-6">
-                    <div>
-                        <h3 class="text-base font-semibold text-white">Scan Events</h3>
-                        <p class="text-xs text-gray-500 mt-1">Click any event to expand details</p>
-                    </div>
+            <!-- Proxy Paused Banner -->
+            <div id="proxy-pause-banner" class="hidden mb-4 bg-red-500/10 border border-red-500/40 rounded-2xl px-6 py-4">
+                <div class="flex items-center justify-between mb-3">
                     <div class="flex items-center gap-3">
-                        <button onclick="loadScanHistory()" class="px-4 py-2 bg-vault-600 hover:bg-vault-500 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                            Refresh
-                        </button>
+                        <svg class="w-5 h-5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        <div>
+                            <span class="text-sm font-semibold text-red-400">Proxy Paused</span>
+                            <span id="proxy-pause-reason" class="text-xs text-red-300/70 ml-2"></span>
+                            <span id="proxy-pause-countdown" class="ml-3 text-xs font-mono text-red-300 bg-red-500/20 px-2 py-0.5 rounded"></span>
+                        </div>
                     </div>
                 </div>
-                <div id="events-list" class="space-y-3">
-                    <div class="text-center text-gray-600 text-sm py-12">No events yet.</div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <button onclick="resumeProxyEnforce()" class="px-3 py-1.5 bg-red-500 hover:bg-red-400 text-white text-xs font-semibold rounded-lg transition-colors" title="Resume proxy, same files will still trigger enforcement">
+                        Resume (Keep Enforcing)
+                    </button>
+                    <button onclick="resumeProxy()" class="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white text-xs font-semibold rounded-lg transition-colors" title="Resume proxy, exempt flagged files until they are modified">
+                        Resume (Exempt Until Modified)
+                    </button>
+                    <button onclick="resumeProxyExempt()" class="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 text-white text-xs font-semibold rounded-lg transition-colors" title="Resume proxy, permanently exempt all flagged files">
+                        Exempt All History
+                    </button>
+                    <button onclick="clearExemptions()" class="px-3 py-1.5 border border-blue-500/50 text-blue-400 hover:bg-blue-500/10 text-xs font-semibold rounded-lg transition-colors" title="Clear all exemptions and acknowledgements">
+                        Clear Exemptions
+                    </button>
+                </div>
+            </div>
+            <!-- ============ DASHBOARD TAB (Protection Monitor) ============ -->
+            <section id="tab-dashboard" class="tab-content fade-in">
+                <!-- Protection Status Bar -->
+                <div class="flex items-center justify-between mb-6 bg-surface-900 rounded-2xl px-6 py-4 border border-gray-800/50">
+                    <div class="flex items-center gap-4">
+                        <div class="flex items-center gap-2">
+                            <span class="w-3 h-3 bg-vault-500 rounded-full pulse-dot"></span>
+                            <span class="text-sm font-semibold text-vault-400">Protected</span>
+                        </div>
+                        <span class="text-xs text-gray-500">Proxy Port: <span id="monitor-proxy-port" class="text-gray-300 font-mono">8765</span></span>
+                    </div>
+                    <button onclick="refreshMonitor()" class="px-4 py-1.5 text-xs font-medium text-vault-400 bg-vault-500/10 hover:bg-vault-500/20 rounded-lg transition-colors flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                        Live Monitor
+                    </button>
+                </div>
+
+                <!-- 8 Stat Cards (2 rows x 4) -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-surface-900 rounded-2xl p-4 border border-gray-800/50 hover:border-gray-700/60 transition-colors">
+                        <div class="text-xs text-gray-500 mb-2">Scans</div>
+                        <div id="m-scan-count" class="text-2xl font-bold text-white">0</div>
+                    </div>
+                    <div class="bg-surface-900 rounded-2xl p-4 border border-gray-800/50 hover:border-gray-700/60 transition-colors">
+                        <div class="text-xs text-gray-500 mb-2">Messages</div>
+                        <div id="m-message-count" class="text-2xl font-bold text-white">0</div>
+                    </div>
+                    <div class="bg-surface-900 rounded-2xl p-4 border border-gray-800/50 hover:border-yellow-500/30 transition-colors">
+                        <div class="text-xs text-gray-500 mb-2">Warnings</div>
+                        <div id="m-warning-count" class="text-2xl font-bold text-yellow-400">0</div>
+                    </div>
+                    <div class="bg-surface-900 rounded-2xl p-4 border border-gray-800/50 hover:border-red-500/30 transition-colors">
+                        <div class="text-xs text-gray-500 mb-2">Blocked</div>
+                        <div id="m-block-count" class="text-2xl font-bold text-red-400">0</div>
+                    </div>
+                    <div class="bg-surface-900 rounded-2xl p-4 border border-gray-800/50 hover:border-gray-700/60 transition-colors">
+                        <div class="text-xs text-gray-500 mb-2">Total Tokens</div>
+                        <div id="m-token-total" class="text-2xl font-bold text-white">0</div>
+                    </div>
+                    <div class="bg-surface-900 rounded-2xl p-4 border border-gray-800/50 hover:border-gray-700/60 transition-colors">
+                        <div class="text-xs text-gray-500 mb-2">Input Tokens</div>
+                        <div id="m-token-input" class="text-2xl font-bold text-blue-400">0</div>
+                    </div>
+                    <div class="bg-surface-900 rounded-2xl p-4 border border-gray-800/50 hover:border-gray-700/60 transition-colors">
+                        <div class="text-xs text-gray-500 mb-2">Output Tokens</div>
+                        <div id="m-token-output" class="text-2xl font-bold text-green-400">0</div>
+                    </div>
+                    <div class="bg-surface-900 rounded-2xl p-4 border border-gray-800/50 hover:border-purple-500/30 transition-colors">
+                        <div class="text-xs text-gray-500 mb-2">Tool Calls</div>
+                        <div id="m-tool-call-count" class="text-2xl font-bold text-purple-400">0</div>
+                    </div>
+                </div>
+
+                <!-- Charts Row -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
+                    <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5">
+                        <h4 class="text-sm font-semibold text-white mb-4">Token Usage Trend</h4>
+                        <div style="height:220px"><canvas id="chart-token-trend"></canvas></div>
+                    </div>
+                    <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5">
+                        <h4 class="text-sm font-semibold text-white mb-4">Tool Call Trend</h4>
+                        <div style="height:220px"><canvas id="chart-tool-trend"></canvas></div>
+                    </div>
+                </div>
+
+                <!-- Bottom Row: Analysis Log + Security Events -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5">
+                        <h4 class="text-sm font-semibold text-white mb-3">Analysis Log</h4>
+                        <div id="analysis-log" class="h-64 overflow-y-auto space-y-1 text-xs font-mono text-gray-400 pr-2">
+                            <div class="text-center text-gray-600 py-8">Waiting for log data...</div>
+                        </div>
+                    </div>
+                    <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5">
+                        <h4 class="text-sm font-semibold text-white mb-3">Security Events</h4>
+                        <div id="security-events" class="h-64 overflow-y-auto space-y-2 pr-2">
+                            <div class="text-center text-gray-600 text-xs py-8">No security events</div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
-            <!-- ============ CONFIG TAB ============ -->
-            <section id="tab-config" class="tab-content hidden fade-in">
-                <!-- Guard Mode -->
-                <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-6 mb-6">
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="w-7 h-7 bg-vault-500/10 rounded-lg flex items-center justify-center">
-                            <svg class="w-4 h-4 text-vault-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                        </div>
-                        <h4 class="text-sm font-semibold text-white">Guard Mode</h4>
-                        <span id="guard-mode-badge" class="badge bg-green-500/10 text-green-400 ml-2">permissive</span>
+            <!-- ============ EVENTS TAB (Audit Log) ============ -->
+            <section id="tab-events" class="tab-content hidden fade-in">
+                <!-- Stats Bar -->
+                <div class="grid grid-cols-5 gap-3 mb-5">
+                    <div class="bg-surface-900 rounded-xl px-4 py-3 border border-gray-800/50 text-center">
+                        <div class="text-xs text-gray-500">Total</div>
+                        <div id="audit-stat-total" class="text-lg font-bold text-white mt-1">0</div>
                     </div>
-                    <div class="flex items-center gap-3 mb-4">
-                        <select id="guard-mode-select" onchange="updateGuardMode(this.value)" class="bg-surface-800 border border-gray-700/50 text-gray-300 text-sm rounded-lg px-4 py-2.5 focus:ring-vault-500 focus:border-vault-500">
-                            <option value="permissive">Permissive</option>
-                            <option value="interactive">Interactive</option>
-                            <option value="strict">Strict</option>
-                        </select>
+                    <div class="bg-surface-900 rounded-xl px-4 py-3 border border-gray-800/50 text-center">
+                        <div class="text-xs text-gray-500">Risks</div>
+                        <div id="audit-stat-risk" class="text-lg font-bold text-red-400 mt-1">0</div>
                     </div>
-                    <div id="guard-mode-desc" class="text-xs text-gray-500 mb-4 leading-relaxed"></div>
-                    <!-- Auto-Sanitize Toggle -->
-                    <div class="flex items-center justify-between p-3 rounded-xl bg-surface-800/50 border border-gray-800/30">
-                        <div>
-                            <div class="text-sm font-medium text-gray-200">Auto-Sanitize</div>
-                            <div class="text-xs text-gray-500 mt-0.5">Mask sensitive data (keys, PII) before sending to AI, restore in response</div>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" id="auto-sanitize-toggle" class="sr-only peer" checked onchange="updateAutoSanitize(this.checked)">
-                            <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-vault-500"></div>
-                        </label>
+                    <div class="bg-surface-900 rounded-xl px-4 py-3 border border-gray-800/50 text-center">
+                        <div class="text-xs text-gray-500">Blocked</div>
+                        <div id="audit-stat-blocked" class="text-lg font-bold text-red-400 mt-1">0</div>
                     </div>
-                    <p class="text-xs text-gray-600 mt-3">Changes take effect immediately and are saved to config.yaml.</p>
-                </div>
-
-                <div class="mb-6">
-                    <h3 class="text-base font-semibold text-white">Global Detection Configuration</h3>
-                    <p class="text-xs text-gray-500 mt-1">Enable or disable detection categories globally</p>
-                </div>
-
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
-                    <!-- Sensitive Data -->
-                    <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-6">
-                        <div class="flex items-center gap-2 mb-5">
-                            <div class="w-7 h-7 bg-amber-500/10 rounded-lg flex items-center justify-center">
-                                <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                            </div>
-                            <h4 class="text-sm font-semibold text-white">Sensitive Data Detection</h4>
-                            <button onclick="togglePatternDetails('sensitive', event)" class="ml-auto text-xs text-gray-400 hover:text-gray-300">Show Details</button>
-                        </div>
-                        <div class="space-y-4" id="config-sensitive-toggles">
-                            <!-- populated by JS -->
-                        </div>
-                        <div id="sensitive-patterns-details" class="hidden mt-4 space-y-2">
-                            <!-- populated by JS -->
-                        </div>
+                    <div class="bg-surface-900 rounded-xl px-4 py-3 border border-gray-800/50 text-center">
+                        <div class="text-xs text-gray-500">Warned</div>
+                        <div id="audit-stat-warned" class="text-lg font-bold text-yellow-400 mt-1">0</div>
                     </div>
-
-                    <!-- Threats -->
-                    <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-6">
-                        <div class="flex items-center gap-2 mb-5">
-                            <div class="w-7 h-7 bg-red-500/10 rounded-lg flex items-center justify-center">
-                                <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                            </div>
-                            <h4 class="text-sm font-semibold text-white">Threat Detection</h4>
-                            <button onclick="togglePatternDetails('threat', event)" class="ml-auto text-xs text-gray-400 hover:text-gray-300">Show Details</button>
-                        </div>
-                        <div class="space-y-4" id="config-threat-toggles">
-                            <!-- populated by JS -->
-                        </div>
-                        <div id="threat-patterns-details" class="hidden mt-4 space-y-2">
-                            <!-- populated by JS -->
-                        </div>
+                    <div class="bg-surface-900 rounded-xl px-4 py-3 border border-gray-800/50 text-center">
+                        <div class="text-xs text-gray-500">Allowed</div>
+                        <div id="audit-stat-allowed" class="text-lg font-bold text-green-400 mt-1">0</div>
                     </div>
                 </div>
 
-                <!-- Detailed Pattern Configuration -->
-                <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-6 mb-6">
-                    <div class="flex items-center justify-between mb-5">
-                        <div class="flex items-center gap-2">
-                            <div class="w-7 h-7 bg-blue-500/10 rounded-lg flex items-center justify-center">
-                                <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                            </div>
-                            <h4 class="text-sm font-semibold text-white">Detection Rules Details</h4>
-                            <span class="text-xs text-gray-500">Search and filter individual patterns</span>
-                        </div>
+                <!-- Search & Filter -->
+                <div class="flex items-center gap-3 mb-5">
+                    <div class="flex-1 relative">
+                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                        <input id="audit-search" type="text" placeholder="Search logs..." class="w-full pl-10 pr-4 py-2 bg-surface-900 border border-gray-700/50 rounded-lg text-sm text-gray-200 placeholder-gray-600 focus:ring-1 focus:ring-vault-500 focus:border-vault-500" oninput="filterAuditLog()">
                     </div>
-                    
-                    <!-- Search and Filter -->
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="flex-1 relative">
-                            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                            <input id="pattern-search" type="text" placeholder="Search patterns..." class="w-full pl-10 pr-4 py-2 bg-surface-800 border border-gray-700/50 rounded-lg text-sm text-gray-200 placeholder-gray-600 focus:ring-1 focus:ring-vault-500 focus:border-vault-500" oninput="filterPatterns()">
-                        </div>
-                        <select id="pattern-category-filter" class="bg-surface-800 border border-gray-700/50 text-gray-300 text-sm rounded-lg px-3 py-2" onchange="filterPatterns()">
-                            <option value="">All Categories</option>
-                            <option value="api">API Keys</option>
-                            <option value="aws">AWS Credentials</option>
-                            <option value="password">Passwords</option>
-                            <option value="private">Private IPs</option>
-                            <option value="jwt">JWT Tokens</option>
-                            <option value="ssh">SSH Keys</option>
-                            <option value="phone">Phone Numbers</option>
-                            <option value="id">ID Cards</option>
-                            <option value="credit">Credit Cards</option>
-                            <option value="email">Emails</option>
-                            <option value="blockchain">Blockchain</option>
-                            <option value="generic">Generic Secrets</option>
-                        </select>
+                    <div class="flex items-center gap-2">
+                        <button id="filter-all" onclick="setLogFilter('all')" class="px-3 py-2 text-xs font-medium bg-vault-600 text-white rounded-lg transition-colors">All</button>
+                        <button id="filter-proxy" onclick="setLogFilter('proxy')" class="px-3 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors">Proxy</button>
+                        <button id="filter-file" data-tab="tab-filemonitor" onclick="setLogFilter('file')" class="px-3 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors">File Monitor</button>
+                        <button id="filter-local_scan" onclick="setLogFilter('local_scan')" class="px-3 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors">Local Scan</button>
                     </div>
-                    
-                    <!-- Patterns Table -->
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
-                            <thead class="bg-surface-800/50 border-b border-gray-800">
-                                <tr>
-                                    <th class="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Pattern</th>
-                                    <th class="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Category</th>
-                                    <th class="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Risk</th>
-                                    <th class="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Regex Pattern</th>
-                                    <th class="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Test Case</th>
-                                    <th class="text-center px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Enabled</th>
-                                </tr>
-                            </thead>
-                            <tbody id="patterns-table-body" class="divide-y divide-gray-800/50">
-                                <!-- populated by JS -->
-                            </tbody>
-                        </table>
-                    </div>
+                    <button id="audit-risk-only-btn" onclick="toggleRiskOnly()" class="px-4 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors">Risks Only</button>
+                    <button onclick="loadScanHistory()" class="px-4 py-2 bg-vault-600 hover:bg-vault-500 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                        Refresh
+                    </button>
                 </div>
 
-                <!-- Rule Engine (Custom Rules) -->
-                <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-6">
-                    <div class="flex items-center justify-between mb-3">
-                        <div class="flex items-center gap-2">
-                            <div class="w-7 h-7 bg-purple-500/10 rounded-lg flex items-center justify-center">
-                                <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="4 3 20 12 4 21 4 3"/></svg>
-                            </div>
-                            <div>
-                                <h4 class="text-sm font-semibold text-white">Custom Rules</h4>
-                                <p class="text-xs text-gray-500 mt-0.5">Create and manage custom detection rules with test cases</p>
-                            </div>
-                        </div>
-                        <button onclick="showAddRuleModal()" class="px-3 py-1.5 bg-vault-600 hover:bg-vault-500 text-xs text-white font-semibold rounded-lg">+ Add Rule</button>
+                <!-- Split Layout -->
+                <div class="flex gap-5" style="min-height:520px">
+                    <!-- Left: Log List -->
+                    <div id="audit-log-list" class="w-1/2 space-y-2 overflow-y-auto pr-2" style="max-height:600px">
+                        <div class="text-center text-gray-600 text-sm py-12">No audit logs yet.</div>
                     </div>
-                    
-                    <!-- Custom Rules Table -->
-                    <div class="overflow-x-auto mt-4">
-                        <table class="w-full text-sm">
-                            <thead class="bg-surface-800/50 border-b border-gray-800">
-                                <tr>
-                                    <th class="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Rule Name</th>
-                                    <th class="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Action</th>
-                                    <th class="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Conditions</th>
-                                    <th class="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Test Case</th>
-                                    <th class="text-center px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Enabled</th>
-                                    <th class="text-center px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="custom-rules-table-body" class="divide-y divide-gray-800/50">
-                                <!-- populated by JS -->
-                            </tbody>
-                        </table>
+                    <!-- Right: Detail Panel -->
+                    <div id="audit-detail-panel" class="w-1/2 bg-surface-900 rounded-2xl border border-gray-800/50 p-5 overflow-y-auto" style="max-height:600px">
+                        <div class="text-center text-gray-600 text-sm py-16">Select a log entry to view details</div>
                     </div>
-                    
-                    <!-- YAML Editor (Advanced Mode) -->
-                    <div class="mt-6 border-t border-gray-800/50 pt-6">
-                        <div class="flex items-center justify-between mb-3">
-                            <div>
-                                <h5 class="text-sm font-semibold text-white">Advanced YAML Editor</h5>
-                                <p class="text-xs text-gray-500 mt-0.5">Edit rules directly in YAML format</p>
-                            </div>
-                            <button onclick="toggleYamlEditor()" class="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-xs text-gray-300 rounded-lg" id="yaml-editor-toggle">Show YAML</button>
+                </div>
+            </section>
+
+            <!-- ============ VAULTS TAB ============ -->
+            <section id="tab-vaults" class="tab-content hidden fade-in">
+                <div class="flex gap-6" style="min-height:700px">
+                    <!-- Left: Vault List -->
+                    <div class="w-1/3">
+                        <div class="mb-4 flex items-center justify-between">
+                            <h3 class="text-base font-semibold text-white">Vault Presets</h3>
+                            <button onclick="createNewVault()" class="px-3 py-1.5 bg-vault-600 hover:bg-vault-500 text-white text-xs font-semibold rounded-lg transition-colors">+ New</button>
                         </div>
-                        <div id="yaml-editor-section" class="hidden">
-                            <textarea id="rules-yaml-editor" class="w-full mt-3 bg-surface-950 border border-gray-800/70 rounded-xl px-4 py-3 text-xs text-gray-200 font-mono leading-relaxed resize-y min-h-[180px] max-h-[420px] placeholder-gray-600 focus:ring-1 focus:ring-vault-500 focus:border-vault-500" spellcheck="false" placeholder='- id: block-injections
-  name: Block all injections
-  enabled: true
-  action: block
-  when:
-    has_injections: true
-  test_case:
-    text: "Ignore all previous instructions"
-    description: "Test injection detection"'></textarea>
-                            <div class="flex items-center justify-between mt-3">
-                                <p class="text-[11px] text-gray-600">Rules are stored in <code class="bg-surface-800 px-1.5 py-0.5 rounded text-[11px] text-gray-300">~/.ClawVault/rules.yaml</code></p>
+                        <div id="vaults-list" class="space-y-3 overflow-y-auto pr-2" style="max-height:650px">
+                            <div class="text-center text-gray-600 text-sm py-8">Loading...</div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Editor -->
+                    <div class="flex-1">
+                        <div id="vault-editor" class="hidden">
+                            <!-- Header -->
+                            <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5 mb-4">
+                                <div class="flex items-center justify-between mb-4">
+                                    <div class="flex items-center gap-3">
+                                        <span id="vault-icon" class="text-2xl">🔒</span>
+                                        <div>
+                                            <h4 id="vault-name" class="text-lg font-semibold text-white">Vault Name</h4>
+                                            <p id="vault-desc" class="text-xs text-gray-500 mt-0.5">Description</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <button id="edit-mode-form" onclick="setEditMode('form')" class="px-3 py-1.5 text-xs font-medium bg-vault-600 text-white rounded-lg transition-colors">Form</button>
+                                        <button id="edit-mode-yaml" onclick="setEditMode('yaml')" class="px-3 py-1.5 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors">YAML</button>
+                                    </div>
+                                </div>
                                 <div class="flex items-center gap-2">
-                                    <button onclick="insertRuleTemplate()" class="px-3 py-1.5 text-[11px] font-medium bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg">Insert Example</button>
-                                    <button onclick="loadRules()" class="px-3 py-1.5 text-[11px] font-medium bg-white/5 hover:bg-white/10 text-gray-300 rounded-lg">Reset</button>
-                                    <button onclick="saveRules()" class="px-3 py-1.5 text-[11px] font-semibold bg-vault-600 hover:bg-vault-500 text-white rounded-lg">Save Rules</button>
+                                    <button id="vault-save-btn" onclick="saveCurrentVault()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg transition-colors">Save</button>
+                                    <button id="vault-apply-btn" onclick="applyCurrentVault()" class="px-4 py-2 bg-vault-600 hover:bg-vault-500 text-white text-xs font-semibold rounded-lg transition-colors">Apply Config</button>
+                                    <button id="vault-delete-btn" onclick="deleteCurrentVault()" class="px-4 py-2 bg-red-600/80 hover:bg-red-600 text-white text-xs font-semibold rounded-lg transition-colors ml-auto">Delete</button>
+                                </div>
+                            </div>
+
+                            <!-- Form View -->
+                            <div id="vault-form-view" class="space-y-4">
+                                <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5">
+                                    <h5 class="text-sm font-semibold text-white mb-4">Detection Config</h5>
+                                    <div id="vault-detection-toggles" class="space-y-3"></div>
+                                </div>
+                                <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5">
+                                    <h5 class="text-sm font-semibold text-white mb-4">Guard Mode</h5>
+                                    <select id="vault-guard-mode" class="w-full bg-surface-800 border border-gray-700/50 text-gray-300 text-sm rounded-lg px-4 py-2.5">
+                                        <option value="permissive">Permissive</option>
+                                        <option value="interactive">Interactive</option>
+                                        <option value="strict">Strict</option>
+                                    </select>
+                                    <div class="mt-3 flex items-center justify-between p-3 rounded-xl bg-surface-800/50">
+                                        <span class="text-sm text-gray-300">Auto-Sanitize</span>
+                                        <input type="checkbox" id="vault-auto-sanitize" class="w-4 h-4">
+                                    </div>
+                                </div>
+                                <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5">
+                                    <h5 class="text-sm font-semibold text-white mb-4">File Monitor</h5>
+                                    <div class="grid grid-cols-2 gap-x-6 gap-y-0">
+                                        <!-- Left Column: Toggles + Paths -->
+                                        <div>
+                                            <div class="flex items-center justify-between py-2 border-b border-gray-800/30">
+                                                <span class="text-sm text-gray-300">Enable File Monitor</span>
+                                                <input type="checkbox" id="vault-fm-enabled" class="w-4 h-4">
+                                            </div>
+                                            <div class="flex items-center justify-between py-2 border-b border-gray-800/30">
+                                                <span class="text-sm text-gray-300">Watch Home Sensitive</span>
+                                                <input type="checkbox" id="vault-fm-home" class="w-4 h-4">
+                                            </div>
+                                            <div class="flex items-center justify-between py-2 border-b border-gray-800/30">
+                                                <span class="text-sm text-gray-300">Scan Content on Change</span>
+                                                <input type="checkbox" id="vault-fm-scan-content" class="w-4 h-4">
+                                            </div>
+                                            <div class="py-2 border-b border-gray-800/30">
+                                                <label class="text-sm text-gray-300 block mb-1.5">Max File Size (KB)</label>
+                                                <input type="number" id="vault-fm-max-size" class="w-28 bg-surface-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-300 focus:border-vault-500 focus:outline-none" value="512" min="1">
+                                            </div>
+                                            <div class="py-2">
+                                                <label class="text-sm text-gray-300 block mb-1.5">Watch Paths</label>
+                                                <div id="vault-fm-extra-paths" class="flex flex-wrap gap-1.5 mb-2"></div>
+                                                <div class="flex gap-2">
+                                                    <input type="text" id="vault-fm-add-path" class="flex-1 bg-surface-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-300 placeholder-gray-600 focus:border-vault-500 focus:outline-none" placeholder="/path/to/watch" onkeydown="if(event.key==='Enter')addVaultFmPath()">
+                                                    <button onclick="addVaultFmPath()" class="px-3 py-1.5 text-xs font-medium text-vault-400 bg-vault-500/10 hover:bg-vault-500/20 rounded-lg transition-colors">Add</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <!-- Right Column: Alert Settings + Patterns -->
+                                        <div>
+                                            <div class="flex items-center justify-between py-2 border-b border-gray-800/30">
+                                                <span class="text-sm text-gray-300">Alert on File Create</span>
+                                                <input type="checkbox" id="vault-fm-alert-create" class="w-4 h-4">
+                                            </div>
+                                            <div class="flex items-center justify-between py-2 border-b border-gray-800/30">
+                                                <span class="text-sm text-gray-300">Alert on File Modify</span>
+                                                <input type="checkbox" id="vault-fm-alert-modify" class="w-4 h-4">
+                                            </div>
+                                            <div class="flex items-center justify-between py-2 border-b border-gray-800/30">
+                                                <span class="text-sm text-gray-300">Alert on File Delete</span>
+                                                <input type="checkbox" id="vault-fm-alert-delete" class="w-4 h-4">
+                                            </div>
+                                            <div class="flex items-center justify-between py-2 border-b border-gray-800/30">
+                                                <span class="text-sm text-gray-300">Alert on File Access (Read)</span>
+                                                <input type="checkbox" id="vault-fm-alert-access" class="w-4 h-4">
+                                            </div>
+                                            <div class="flex items-center justify-between py-2 border-b border-gray-800/30">
+                                                <span class="text-sm text-gray-300">Access Debounce (seconds)</span>
+                                                <input type="number" id="vault-fm-access-debounce" class="w-20 bg-surface-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-300 focus:border-vault-500 focus:outline-none" value="5" min="1">
+                                            </div>
+                                            <div class="py-2">
+                                                <label class="text-sm text-gray-300 block mb-1.5">Watch Patterns</label>
+                                                <div id="vault-fm-patterns" class="flex flex-wrap gap-1.5 mb-2"></div>
+                                                <div class="flex gap-2">
+                                                    <input type="text" id="vault-fm-add-pattern" class="flex-1 bg-surface-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-300 font-mono placeholder-gray-600 focus:border-vault-500 focus:outline-none" placeholder="*.env" onkeydown="if(event.key==='Enter')addVaultFmPattern()">
+                                                    <button onclick="addVaultFmPattern()" class="px-3 py-1.5 text-xs font-medium text-vault-400 bg-vault-500/10 hover:bg-vault-500/20 rounded-lg transition-colors">Add</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- YAML View -->
+                            <div id="vault-yaml-view" class="hidden">
+                                <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5">
+                                    <textarea id="vault-yaml-editor" rows="25" class="w-full bg-surface-800 border border-gray-700/50 rounded-lg px-4 py-3 text-xs text-gray-200 font-mono focus:ring-1 focus:ring-vault-500 focus:border-vault-500 resize-none"></textarea>
+                                </div>
+                            </div>
+
+                            <!-- Test Panel -->
+                            <div class="mt-4">
+                                <button onclick="toggleVaultTest()" class="w-full bg-surface-900 rounded-2xl border border-gray-800/50 p-4 text-left hover:border-vault-500/30 transition-colors">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-sm font-semibold text-white">Quick Test</span>
+                                        <svg id="vault-test-arrow" class="w-4 h-4 text-gray-400 transition-transform" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+                                    </div>
+                                </button>
+                                <div id="vault-test-panel" class="hidden mt-3 bg-surface-900 rounded-2xl border border-gray-800/50 p-5">
+                                    <textarea id="vault-test-input" rows="3" class="w-full bg-surface-800 border border-gray-700/50 rounded-lg px-4 py-3 text-sm text-gray-200 placeholder-gray-600 focus:ring-1 focus:ring-vault-500 resize-none mb-3" placeholder="Enter test text..."></textarea>
+                                    <button onclick="runVaultTest()" class="px-4 py-2 bg-vault-600 hover:bg-vault-500 text-white text-xs font-semibold rounded-lg transition-colors">Run Test</button>
+                                    <div id="vault-test-result" class="hidden mt-4 p-4 bg-surface-800/50 rounded-lg"></div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    <div id="rules-list" class="mt-4 space-y-2">
-                        <!-- populated by JS for per-rule overview and delete -->
+
+                        <!-- Empty State -->
+                        <div id="vault-empty" class="flex items-center justify-center h-full">
+                            <div class="text-center text-gray-600">
+                                <svg class="w-16 h-16 mx-auto mb-4 text-gray-700" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                <p class="text-sm">Select or create a vault</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
+
 
             <!-- ============ TEST TAB ============ -->
             <section id="tab-test" class="tab-content hidden fade-in">
@@ -447,6 +500,85 @@
                 <!-- Attack Cases Grid -->
                 <div id="attack-cases-grid" class="space-y-4">
                     <!-- populated by JS -->
+                </div>
+            </section>
+
+            <!-- ============ LOCAL SCAN TAB ============ -->
+            <section id="tab-localscan" class="tab-content hidden fade-in">
+                <div class="mb-6">
+                    <h3 class="text-base font-semibold text-white">Local Filesystem Scanner</h3>
+                    <p class="text-xs text-gray-500 mt-1">Scan local files for credentials, vulnerabilities, and skill risks</p>
+                </div>
+
+                <!-- Scan Controls -->
+                <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5 mb-6">
+                    <h4 class="text-sm font-semibold text-white mb-4">Run Scan</h4>
+                    <div class="grid grid-cols-3 gap-4 mb-4">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Scan Type</label>
+                            <select id="ls-scan-type" class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                                <option value="credential">Credential Scan</option>
+                                <option value="vulnerability">Vulnerability Scan</option>
+                                <option value="skill_audit">Skill Audit</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">Path</label>
+                            <input id="ls-scan-path" type="text" placeholder="~ (home directory)" class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"/>
+                        </div>
+                        <div class="flex items-end">
+                            <button onclick="runLocalScan()" id="ls-run-btn" class="px-6 py-2 bg-vault-600 hover:bg-vault-500 text-white text-sm font-semibold rounded-lg transition-colors">
+                                Run Scan
+                            </button>
+                        </div>
+                    </div>
+                    <div id="ls-scan-result" class="hidden mt-4"></div>
+                </div>
+
+                <!-- Schedules -->
+                <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5 mb-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h4 class="text-sm font-semibold text-white">Scheduled Scans</h4>
+                        <button onclick="showAddScheduleForm()" class="px-3 py-1.5 bg-vault-600 hover:bg-vault-500 text-white text-xs font-semibold rounded-lg transition-colors">+ Add Schedule</button>
+                    </div>
+                    <div id="ls-add-schedule-form" class="hidden bg-surface-800 rounded-xl p-4 mb-4">
+                        <div class="grid grid-cols-4 gap-3 mb-3">
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Cron Expression</label>
+                                <input id="ls-sched-cron" type="text" placeholder="0 2 * * *" class="w-full bg-surface-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white font-mono"/>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Type</label>
+                                <select id="ls-sched-type" class="w-full bg-surface-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                                    <option value="credential">Credential</option>
+                                    <option value="vulnerability">Vulnerability</option>
+                                    <option value="skill_audit">Skill Audit</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-400 mb-1">Path</label>
+                                <input id="ls-sched-path" type="text" placeholder="/home/user" class="w-full bg-surface-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"/>
+                            </div>
+                            <div class="flex items-end gap-2">
+                                <button onclick="addLocalScanSchedule()" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-xs font-semibold rounded-lg">Save</button>
+                                <button onclick="hideAddScheduleForm()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded-lg">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="ls-schedules-list" class="space-y-2">
+                        <div class="text-center text-gray-600 text-sm py-6">Loading schedules...</div>
+                    </div>
+                </div>
+
+                <!-- Recent Scan History -->
+                <div class="bg-surface-900 rounded-2xl border border-gray-800/50 p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <h4 class="text-sm font-semibold text-white">Recent Scan Results</h4>
+                        <button onclick="loadLocalScanHistory()" class="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-gray-400 text-xs rounded-lg transition-colors">Refresh</button>
+                    </div>
+                    <div id="ls-history-list" class="space-y-2">
+                        <div class="text-center text-gray-600 text-sm py-6">Loading history...</div>
+                    </div>
                 </div>
             </section>
         </div>
@@ -547,6 +679,7 @@ const DETECTION_ITEMS = {
     generic_secrets:   { label: 'Generic Secrets',   group: 'sensitive', icon: '🔐' },
     dangerous_commands:{ label: 'Dangerous Commands', group: 'threat',   icon: '⚠️' },
     prompt_injection:  { label: 'Prompt Injection',  group: 'threat',   icon: '💉' },
+    file_monitor:      { label: 'File Monitor',      group: 'service',  icon: '📁' },
 };
 
 const THREAT_COLORS = {
@@ -561,9 +694,9 @@ const CATEGORY_BADGE = {
     sensitive: { bg: 'bg-amber-500/15', text: 'text-amber-400', label: 'Sensitive' },
     command:   { bg: 'bg-red-500/15',   text: 'text-red-400',   label: 'Command' },
     injection: { bg: 'bg-purple-500/15',text: 'text-purple-400',label: 'Injection' },
-    mixed:     { bg: 'bg-pink-500/15',  text: 'text-pink-400',  label: 'Mixed' },
-    custom:    { bg: 'bg-cyan-500/15',  text: 'text-cyan-400',  label: 'Custom Rule' },
-    pattern:   { bg: 'bg-blue-500/15',  text: 'text-blue-400',  label: 'Pattern Test' },
+    pattern:   { bg: 'bg-blue-500/15',  text: 'text-blue-400',  label: 'Pattern' },
+    custom:    { bg: 'bg-green-500/15', text: 'text-green-400', label: 'Custom' },
+    mixed:     { bg: 'bg-indigo-500/15',text: 'text-indigo-400',label: 'Mixed' },
 };
 
 // ===================== State =====================
@@ -573,8 +706,15 @@ let detectionConfig = {};
 let currentRules = [];
 
 // ===================== API =====================
-async function api(path, opts = {}) {
+async function api(path, methodOrOpts = {}, body = undefined) {
     try {
+        let opts;
+        if (typeof methodOrOpts === 'string') {
+            opts = { method: methodOrOpts };
+            if (body !== undefined) opts.body = JSON.stringify(body);
+        } else {
+            opts = methodOrOpts;
+        }
         const r = await fetch('/api' + path, {
             headers: { 'Content-Type': 'application/json', ...opts.headers },
             ...opts,
@@ -597,171 +737,442 @@ function switchTab(tab) {
     active.classList.add('bg-vault-500/10', 'text-vault-400');
     active.classList.remove('text-gray-400');
 
-    const titles = { dashboard: 'Dashboard', events: 'Scan Events', config: 'Configuration', test: 'Quick Test', attacks: 'Attack Cases' };
+    const titles = { dashboard: 'Protection Monitor', events: 'Audit Log', vaults: 'Vaults', test: 'Quick Test', attacks: 'Attack Cases', localscan: 'Local Scan' };
     document.getElementById('page-title').textContent = titles[tab] || tab;
 
+    if (tab === 'dashboard') refreshMonitor();
     if (tab === 'events') loadScanHistory();
-    if (tab === 'config') loadDetectionConfig();
+    if (tab === 'vaults') loadVaults();
+    if (tab === 'localscan') { loadLocalScanSchedules(); loadLocalScanHistory(); }
     if (tab === 'test') loadTestCases();
     if (tab === 'attacks') loadAttackCases();
 }
 
-// ===================== Dashboard =====================
-async function refreshDashboard() {
-    const [summary, budget, history] = await Promise.all([
-        api('/summary'), api('/budget'), api('/scan-history?limit=5')
-    ]);
+// ===================== Dashboard (Protection Monitor) =====================
+let _tokenChart = null;
+let _toolChart = null;
 
-    // Stats
-    const totalScans = history ? history.length : 0;
-    const totalThreats = history ? history.filter(e => e.has_threats).length : 0;
-    document.getElementById('stat-scans').textContent = scanHistory.length || totalScans;
-    document.getElementById('stat-threats').textContent = scanHistory.filter(e => e.has_threats).length || totalThreats;
+function initCharts() {
+    const chartOpts = {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { size: 10 } } },
+            y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b7280', font: { size: 10 } }, beginAtZero: true }
+        }
+    };
 
-    if (summary) {
-        document.getElementById('stat-tokens').textContent = (summary.total_tokens || 0).toLocaleString();
+    const tokenCtx = document.getElementById('chart-token-trend');
+    if (tokenCtx) {
+        _tokenChart = new Chart(tokenCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Input', data: [], borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', tension: 0.3, fill: true, pointRadius: 2 },
+                    { label: 'Output', data: [], borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.1)', tension: 0.3, fill: true, pointRadius: 2 },
+                ]
+            },
+            options: { ...chartOpts, plugins: { legend: { display: true, labels: { color: '#9ca3af', font: { size: 10 } } } } }
+        });
     }
 
-    // Budget
-    if (budget) {
-        const pct = Math.min(budget.daily_pct || 0, 100);
-        document.getElementById('budget-bar').style.width = pct + '%';
-        if (pct > 80) document.getElementById('budget-bar').className = 'bg-gradient-to-r from-red-600 to-red-400 h-2.5 rounded-full transition-all duration-500';
-        else if (pct > 60) document.getElementById('budget-bar').className = 'bg-gradient-to-r from-yellow-600 to-yellow-400 h-2.5 rounded-full transition-all duration-500';
-        document.getElementById('budget-text').textContent = (budget.daily_used||0).toLocaleString() + ' / ' + (budget.daily_limit||0).toLocaleString();
+    const toolCtx = document.getElementById('chart-tool-trend');
+    if (toolCtx) {
+        _toolChart = new Chart(toolCtx, {
+            type: 'bar',
+            data: { labels: [], datasets: [{ label: 'Calls', data: [], backgroundColor: 'rgba(168,85,247,0.5)', borderColor: '#a855f7', borderWidth: 1 }] },
+            options: chartOpts
+        });
     }
-
-    // Recent events
-    const events = await api('/scan-history?limit=5');
-    renderDashboardEvents(events || []);
 }
 
-function renderDashboardEvents(events) {
-    const el = document.getElementById('dashboard-events');
-    if (!events.length) {
-        el.innerHTML = '<div class="px-6 py-10 text-center text-gray-600 text-sm">No scan history yet. Go to Test tab to run a scan.</div>';
-        return;
+async function refreshMonitor() {
+    const [overview, trends, logStream, secEvents] = await Promise.all([
+        api('/monitor/overview'),
+        api('/monitor/trends'),
+        api('/monitor/log-stream'),
+        api('/monitor/security-events'),
+    ]);
+
+    if (overview) {
+        document.getElementById('m-scan-count').textContent = (overview.scan_count || 0).toLocaleString();
+        document.getElementById('m-message-count').textContent = (overview.message_count || 0).toLocaleString();
+        document.getElementById('m-warning-count').textContent = (overview.warning_count || 0).toLocaleString();
+        document.getElementById('m-block-count').textContent = (overview.block_count || 0).toLocaleString();
+        document.getElementById('m-token-total').textContent = (overview.token_total || 0).toLocaleString();
+        document.getElementById('m-token-input').textContent = (overview.token_input || 0).toLocaleString();
+        document.getElementById('m-token-output').textContent = (overview.token_output || 0).toLocaleString();
+        document.getElementById('m-tool-call-count').textContent = (overview.tool_call_count || 0).toLocaleString();
+        const portEl = document.getElementById('monitor-proxy-port');
+        if (portEl && overview.proxy_port) portEl.textContent = overview.proxy_port;
     }
-    el.innerHTML = events.map(e => {
-        const tc = THREAT_COLORS[e.threat_level] || THREAT_COLORS.safe;
-        const time = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '';
-        // Build title: detected → detection labels; allowed → agent chat; test → preview
-        let title = '';
-        if (e.has_threats) {
-            const tags = [];
-            if (e.sensitive?.length) tags.push(...e.sensitive.map(s => s.type));
-            if (e.commands?.length) tags.push(...e.commands.map(c => c.reason));
-            if (e.injections?.length) tags.push(...e.injections.map(j => j.type));
-            title = tags.length ? tags.join(', ') : '[detected content hidden]';
-        } else if (e.action === 'allow') {
-            title = e.agent_name ? e.agent_name + ' chat' : 'Chat message';
-        } else if (!e.action) {
-            title = escHtml(e.input_preview || 'N/A');
-        } else {
-            title = e.agent_name ? e.agent_name + ' chat' : 'Chat message';
+
+    if (trends) {
+        // Token trend chart
+        if (_tokenChart && trends.token_trend) {
+            const labels = trends.token_trend.map(t => {
+                const d = new Date(t.ts);
+                return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+            });
+            _tokenChart.data.labels = labels;
+            _tokenChart.data.datasets[0].data = trends.token_trend.map(t => t.input || 0);
+            _tokenChart.data.datasets[1].data = trends.token_trend.map(t => t.output || 0);
+            _tokenChart.update('none');
         }
+        // Tool call trend chart
+        if (_toolChart && trends.tool_call_trend) {
+            const labels = trends.tool_call_trend.map(t => {
+                const d = new Date(t.ts);
+                return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+            });
+            _toolChart.data.labels = labels;
+            _toolChart.data.datasets[0].data = trends.tool_call_trend.map(t => t.count || 0);
+            _toolChart.update('none');
+        }
+    }
+
+    // Analysis log
+    if (logStream) renderAnalysisLog(logStream);
+    // Security events
+    if (secEvents) renderSecurityEvents(secEvents);
+
+    // Check proxy pause status
+    await checkProxyPause();
+}
+
+async function checkProxyPause() {
+    const status = await api('/proxy/pause-status');
+    const banner = document.getElementById('proxy-pause-banner');
+    if (!banner) return;
+    if (status && status.paused) {
+        banner.classList.remove('hidden');
+        const reasonEl = document.getElementById('proxy-pause-reason');
+        if (reasonEl) reasonEl.textContent = status.reason || '';
+        startPauseCountdown(status.remaining_seconds || 0);
+    } else {
+        banner.classList.add('hidden');
+        stopPauseCountdown();
+    }
+}
+
+let _pauseCountdownInterval = null;
+let _pauseRemainingSeconds = 0;
+
+function startPauseCountdown(seconds) {
+    stopPauseCountdown();
+    _pauseRemainingSeconds = seconds;
+    updateCountdownDisplay();
+    _pauseCountdownInterval = setInterval(() => {
+        _pauseRemainingSeconds--;
+        if (_pauseRemainingSeconds <= 0) {
+            _pauseRemainingSeconds = 0;
+            stopPauseCountdown();
+            // Auto-resumed on server side, hide banner
+            document.getElementById('proxy-pause-banner')?.classList.add('hidden');
+            showNotification('Proxy auto-resumed', 'success');
+            refreshMonitor();
+        }
+        updateCountdownDisplay();
+    }, 1000);
+}
+
+function stopPauseCountdown() {
+    if (_pauseCountdownInterval) {
+        clearInterval(_pauseCountdownInterval);
+        _pauseCountdownInterval = null;
+    }
+}
+
+function updateCountdownDisplay() {
+    const el = document.getElementById('proxy-pause-countdown');
+    if (!el) return;
+    const s = _pauseRemainingSeconds;
+    const min = Math.floor(s / 60);
+    const sec = s % 60;
+    el.textContent = `Auto-resume in ${min}:${String(sec).padStart(2, '0')}`;
+}
+
+async function resumeProxy() {
+    const result = await api('/proxy/resume', 'POST');
+    if (result && result.resumed) {
+        showNotification('Proxy resumed (exempt until modified)', 'success');
+        stopPauseCountdown();
+        document.getElementById('proxy-pause-banner')?.classList.add('hidden');
+    } else {
+        showNotification('Failed to resume proxy', 'error');
+    }
+}
+
+async function resumeProxyEnforce() {
+    const result = await api('/proxy/resume-enforce', 'POST');
+    if (result && result.resumed) {
+        showNotification('Proxy resumed (enforcement continues)', 'success');
+        stopPauseCountdown();
+        document.getElementById('proxy-pause-banner')?.classList.add('hidden');
+    } else {
+        showNotification('Failed to resume proxy', 'error');
+    }
+}
+
+async function resumeProxyExempt() {
+    const result = await api('/proxy/resume-exempt', 'POST');
+    if (result && result.resumed) {
+        showNotification('Proxy resumed (all history exempted)', 'success');
+        stopPauseCountdown();
+        document.getElementById('proxy-pause-banner')?.classList.add('hidden');
+    } else {
+        showNotification('Failed to resume proxy', 'error');
+    }
+}
+
+async function clearExemptions() {
+    const result = await api('/proxy/clear-exemptions', 'POST');
+    if (result && result.cleared) {
+        showNotification('Exemptions cleared — full enforcement restored', 'success');
+    } else {
+        showNotification('Failed to clear exemptions', 'error');
+    }
+}
+
+function renderAnalysisLog(logs) {
+    const el = document.getElementById('analysis-log');
+    if (!logs.length) { el.innerHTML = '<div class="text-center text-gray-600 py-8">Waiting for log data...</div>'; return; }
+    el.innerHTML = logs.map(l => {
+        const levelColor = l.level === 'error' ? 'text-red-400' : l.level === 'warn' ? 'text-yellow-400' : 'text-gray-500';
+        const ts = l.ts ? new Date(l.ts).toLocaleTimeString() : '';
+        return `<div class="flex gap-2 py-0.5"><span class="text-gray-600 shrink-0">${ts}</span><span class="${levelColor} shrink-0">[${(l.level||'info').toUpperCase()}]</span><span class="text-gray-300 break-all">${escHtml(l.message)}</span></div>`;
+    }).join('');
+    el.scrollTop = el.scrollHeight;
+}
+
+function renderSecurityEvents(events) {
+    const el = document.getElementById('security-events');
+    if (!events.length) { el.innerHTML = '<div class="text-center text-gray-600 text-xs py-8">No security events</div>'; return; }
+    const sevColors = { critical: 'bg-red-500', high: 'bg-orange-500', medium: 'bg-yellow-500', low: 'bg-blue-500' };
+    el.innerHTML = events.map(ev => {
+        const dot = sevColors[ev.severity] || 'bg-gray-500';
+        const ts = ev.ts ? new Date(ev.ts).toLocaleTimeString() : '';
         return `
-        <div class="px-6 py-3.5 flex items-center gap-4 hover:bg-white/[.02] transition-colors cursor-pointer" onclick="switchTab('events')">
-            <div class="w-8 h-8 ${tc.bg} rounded-lg flex items-center justify-center shrink-0">
-                <span class="text-sm">${e.has_threats ? "🚨" : "✅"}</span>
-            </div>
+        <div class="flex items-start gap-3 py-1.5">
+            <div class="mt-1.5 w-2 h-2 ${dot} rounded-full shrink-0"></div>
             <div class="flex-1 min-w-0">
-                <div class="text-sm text-gray-200 truncate">${title}</div>
-                <div class="text-xs text-gray-500 mt-0.5">${e.agent_name ? e.agent_name + " · " : ""}${e.total_detections} detection(s)</div>
+                <div class="text-xs text-gray-300">${escHtml(ev.summary)}</div>
+                <div class="text-[10px] text-gray-600 mt-0.5">${ts} · ${ev.type || 'threat'}</div>
             </div>
-            <span class="badge ${tc.bg} ${tc.text}">${e.threat_level}</span>
-            <span class="text-xs text-gray-600 font-mono">${time}</span>
         </div>`;
     }).join('');
 }
 
-// ===================== Events =====================
+// Legacy refreshDashboard for compatibility (called by showTestResult etc.)
+async function refreshDashboard() { await refreshMonitor(); }
+
+// ===================== Events (Audit Log) =====================
+let _auditRiskOnly = false;
+let _auditSearchTerm = '';
+let _filteredAuditEvents = [];
+let _selectedAuditIdx = -1;
+let _logFilter = 'all'; // all, proxy, file
+
 async function loadScanHistory() {
     const data = await api('/scan-history?limit=200');
     if (data) scanHistory = data;
-    renderEvents(scanHistory);
+    _filteredAuditEvents = filterAuditEvents(scanHistory);
+    renderAuditLog(_filteredAuditEvents);
+    updateAuditStats(scanHistory);
 }
 
-function renderEvents(events) {
-    const el = document.getElementById('events-list');
-    // Filter out test-case scans — only show proxy events
-    events = events.filter(e => e.source !== 'test');
+function setLogFilter(filter) {
+    _logFilter = filter;
+    ['all', 'proxy', 'file', 'local_scan'].forEach(f => {
+        const btn = document.getElementById('filter-' + f);
+        if (f === filter) {
+            btn.className = 'px-3 py-2 text-xs font-medium bg-vault-600 text-white rounded-lg transition-colors';
+        } else {
+            btn.className = 'px-3 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors';
+        }
+    });
+    _filteredAuditEvents = filterAuditEvents(scanHistory);
+    renderAuditLog(_filteredAuditEvents);
+    updateAuditStats(scanHistory);
+}
+
+function filterAuditEvents(events) {
+    let filtered = [...events];
+    if (_logFilter === 'proxy') filtered = filtered.filter(e => e.source === 'proxy' || !e.source);
+    if (_logFilter === 'file') filtered = filtered.filter(e => e.source === 'file');
+    if (_logFilter === 'local_scan') filtered = filtered.filter(e => e.source === 'local_scan');
+    if (_auditRiskOnly) filtered = filtered.filter(e => e.has_threats);
+    if (_auditSearchTerm) {
+        const q = _auditSearchTerm.toLowerCase();
+        filtered = filtered.filter(e =>
+            (e.agent_name || '').toLowerCase().includes(q) ||
+            (e.input_preview || '').toLowerCase().includes(q) ||
+            (e.action || '').toLowerCase().includes(q) ||
+            (e.source || '').toLowerCase().includes(q)
+        );
+    }
+    return filtered;
+}
+
+function updateAuditStats(events) {
+    document.getElementById('audit-stat-total').textContent = events.length;
+    document.getElementById('audit-stat-risk').textContent = events.filter(e => e.has_threats).length;
+    document.getElementById('audit-stat-blocked').textContent = events.filter(e => e.action === 'block').length;
+    document.getElementById('audit-stat-warned').textContent = events.filter(e => e.action === 'ask_user').length;
+    document.getElementById('audit-stat-allowed').textContent = events.filter(e => e.action === 'allow').length;
+}
+
+function filterAuditLog() {
+    _auditSearchTerm = document.getElementById('audit-search')?.value || '';
+    _filteredAuditEvents = filterAuditEvents(scanHistory);
+    renderAuditLog(_filteredAuditEvents);
+}
+
+function toggleRiskOnly() {
+    _auditRiskOnly = !_auditRiskOnly;
+    const btn = document.getElementById('audit-risk-only-btn');
+    if (_auditRiskOnly) {
+        btn.className = 'px-4 py-2 text-xs font-medium bg-red-500/20 text-red-400 rounded-lg transition-colors';
+    } else {
+        btn.className = 'px-4 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors';
+    }
+    _filteredAuditEvents = filterAuditEvents(scanHistory);
+    renderAuditLog(_filteredAuditEvents);
+}
+
+const ACTION_BADGE = {
+    allow:    { bg: 'bg-green-500/10', text: 'text-green-400', label: 'Allowed' },
+    block:    { bg: 'bg-red-500/10',   text: 'text-red-400',   label: 'Blocked' },
+    sanitize: { bg: 'bg-blue-500/10',  text: 'text-blue-400',  label: 'Sanitized' },
+    ask_user: { bg: 'bg-yellow-500/10',text: 'text-yellow-400',label: 'Warning' },
+    log:      { bg: 'bg-gray-500/10',  text: 'text-gray-400',  label: 'Logged' },
+};
+
+function renderAuditLog(events) {
+    const el = document.getElementById('audit-log-list');
     if (!events.length) {
-        el.innerHTML = '<div class="text-center text-gray-600 text-sm py-12">No events yet. Chat through OpenClaw to generate events.</div>';
+        el.innerHTML = '<div class="text-center text-gray-600 text-sm py-12">No audit logs yet.</div>';
         return;
     }
-    const ACTION_BADGE = {
-        allow:    { bg: 'bg-green-500/10', text: 'text-green-400', label: 'Allowed' },
-        block:    { bg: 'bg-red-500/10',   text: 'text-red-400',   label: 'Blocked' },
-        sanitize: { bg: 'bg-blue-500/10',  text: 'text-blue-400',  label: 'Sanitized' },
-        ask_user: { bg: 'bg-yellow-500/10',text: 'text-yellow-400',label: 'Warning' },
-    };
     el.innerHTML = events.map((e, i) => {
         const tc = THREAT_COLORS[e.threat_level] || THREAT_COLORS.safe;
-        const time = e.timestamp ? new Date(e.timestamp).toLocaleString() : '';
-        const isProxy = e.source === 'proxy';
-        const actionBadge = ACTION_BADGE[e.action] || ACTION_BADGE.allow;
-        // Category badges
-        const cats = [];
-        if (e.sensitive?.length) cats.push('sensitive');
-        if (e.commands?.length) cats.push('command');
-        if (e.injections?.length) cats.push('injection');
-
+        const ab = ACTION_BADGE[e.action] || ACTION_BADGE.allow;
+        const time = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '';
+        const selected = i === _selectedAuditIdx ? 'ring-1 ring-vault-500' : '';
+        // Title
+        let title = '';
+        if (e.source === 'file') {
+            title = escHtml(e.input_preview || 'File event');
+        } else if (e.source === 'local_scan') {
+            title = escHtml(e.input_preview || 'Local scan');
+        } else if (e.has_threats) {
+            const tags = [];
+            if (e.sensitive?.length) tags.push(...e.sensitive.map(s => s.type));
+            if (e.commands?.length) tags.push(...e.commands.map(c => c.reason));
+            if (e.injections?.length) tags.push(...e.injections.map(j => j.type));
+            title = tags.length ? tags.join(', ') : '[detected]';
+        } else {
+            title = e.agent_name ? escHtml(e.agent_name) + ' chat' : 'Chat message';
+        }
+        const toolCount = e.tool_call_count || 0;
         return `
-        <div class="bg-surface-900 rounded-2xl border ${tc.border} overflow-hidden">
-            <div class="px-5 py-4 flex items-center gap-4 cursor-pointer hover:bg-white/[.02] transition-colors" onclick="toggleEventDetail('${e.id}', ${i})">
-                <div class="w-9 h-9 ${tc.bg} rounded-xl flex items-center justify-center shrink-0">
-                    <span class="text-base">${e.has_threats ? "🚨" : "✅"}</span>
-                </div>
-                <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2 flex-wrap">
-                        ${isProxy ? '<span class="badge bg-cyan-500/10 text-cyan-400">Proxy</span>' : ""}
-                        <span class="text-sm font-medium text-gray-200 truncate max-w-md">${
-							e.has_threats
-								? (function () {
-										const t = [];
-										if (e.sensitive?.length)
-											t.push(...e.sensitive.map((s) => s.type));
-										if (e.commands?.length)
-											t.push(...e.commands.map((c) => c.reason));
-										if (e.injections?.length)
-											t.push(...e.injections.map((j) => j.type));
-										return t.length
-											? t.join(", ")
-											: "[detected content hidden]";
-									})()
-								: e.action === "allow"
-									? e.agent_name
-										? escHtml(e.agent_name) + " chat"
-										: "Chat message"
-									: escHtml(e.input_preview || "N/A")
-						}</span>
-                        ${cats
-							.map((c) => {
-								const b = CATEGORY_BADGE[c];
-								return `<span class="badge ${b.bg} ${b.text}">${b.label}</span>`;
-							})
-							.join("")}
-                    </div>
-                    <div class="text-xs text-gray-500 mt-1">
-                        ${e.agent_name ? '<span class="text-vault-500">' + escHtml(e.agent_name) + "</span> · " : ""}
-                        ${e.agent_id ? 'Agent ID <span class="font-mono text-gray-400">' + escHtml(e.agent_id) + "</span> · " : ""}
-                        ${e.session_id ? 'Session <span class="font-mono text-gray-400">' + escHtml(e.session_id) + "</span> · " : ""}
-                        ${e.total_detections} detection(s) · Risk ${e.max_risk_score?.toFixed(1) || "0.0"}
-                    </div>
-                </div>
-                <span class="badge ${actionBadge.bg} ${actionBadge.text}">${actionBadge.label}</span>
-                <span class="badge ${tc.bg} ${tc.text} uppercase">${e.threat_level}</span>
-                <span class="text-xs text-gray-600 font-mono whitespace-nowrap">${time}</span>
-                <svg id="chevron-${i}" class="w-4 h-4 text-gray-600 transition-transform" style="${_expandedEvents.has(e.id) ? "transform:rotate(180deg)" : ""}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+        <div class="bg-surface-900 rounded-xl border border-gray-800/50 ${selected} p-3 cursor-pointer hover:bg-white/[.02] transition-all" onclick="selectAuditEvent(${i})">
+            <div class="flex items-center gap-2 mb-1">
+                <span class="badge ${ab.bg} ${ab.text}">${ab.label}</span>
+                <span class="badge ${tc.bg} ${tc.text} uppercase text-[10px]">${e.threat_level}</span>
+                ${e.source === 'file' ? '<span class="badge bg-cyan-500/10 text-cyan-400 text-[10px]">FILE</span>' : ''}
+                ${e.source === 'local_scan' ? '<span class="badge bg-purple-500/10 text-purple-400 text-[10px]">LOCAL</span>' : ''}
+                <span class="text-[10px] text-gray-600 font-mono ml-auto">${time}</span>
             </div>
-            <div id="event-detail-${i}" class="${_expandedEvents.has(e.id) ? "" : "hidden"} border-t border-gray-800/40">
-                ${renderEventDetail(e)}
+            <div class="text-sm text-gray-200 truncate">${title}</div>
+            <div class="text-xs text-gray-500 mt-1 flex items-center gap-2">
+                ${e.agent_name ? '<span class="text-vault-500">' + escHtml(e.agent_name) + '</span>' : ''}
+                <span>${e.total_detections || 0} detections</span>
+                ${toolCount > 0 ? '<span class="text-purple-400">' + toolCount + ' tool calls</span>' : ''}
             </div>
         </div>`;
-					})
-					.join("");
-			}
+    }).join('');
+}
+
+function selectAuditEvent(idx) {
+    _selectedAuditIdx = idx;
+    renderAuditLog(_filteredAuditEvents);
+    const e = _filteredAuditEvents[idx];
+    if (!e) return;
+    renderAuditDetail(e);
+}
+
+function renderAuditDetail(e) {
+    const panel = document.getElementById('audit-detail-panel');
+    const tc = THREAT_COLORS[e.threat_level] || THREAT_COLORS.safe;
+    const ab = ACTION_BADGE[e.action] || ACTION_BADGE.allow;
+    const time = e.timestamp ? new Date(e.timestamp).toLocaleString() : '';
+
+    let html = `
+    <div class="mb-4">
+        <div class="flex items-center gap-2 mb-2">
+            <span class="text-lg">${e.has_threats ? '🚨' : '✅'}</span>
+            <span class="badge ${ab.bg} ${ab.text}">${ab.label}</span>
+            <span class="badge ${tc.bg} ${tc.text} uppercase">${e.threat_level}</span>
+            <span class="text-xs text-gray-600 font-mono ml-auto">${time}</span>
+        </div>
+        <h4 class="text-sm font-semibold text-white">${e.source === 'file' ? 'File Monitor Event' : 'Log Details'}</h4>
+    </div>`;
+
+    // Session metadata
+    if (e.source === 'file') {
+        html += `<div class="mb-4">
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">File Info</div>
+            <div class="bg-surface-950 rounded-lg p-3 border border-gray-800/30">
+                <span class="text-xs text-gray-200 font-mono">${escHtml(e.input_preview || '')}</span>
+            </div>
+        </div>`;
+    } else if (e.agent_id || e.session_id || e.agent_name) {
+        html += `<div class="mb-4">
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Session Info</div>
+            <div class="grid grid-cols-1 gap-2 text-xs">
+                <div class="bg-surface-950 rounded-lg p-3 border border-gray-800/30">
+                    <span class="text-gray-500">Agent:</span> <span class="text-gray-200 font-mono">${escHtml(e.agent_name || '-')}</span>
+                </div>
+                <div class="bg-surface-950 rounded-lg p-3 border border-gray-800/30">
+                    <span class="text-gray-500">Agent ID:</span> <span class="text-gray-200 font-mono">${escHtml(e.agent_id || '-')}</span>
+                </div>
+                <div class="bg-surface-950 rounded-lg p-3 border border-gray-800/30">
+                    <span class="text-gray-500">Session:</span> <span class="text-gray-200 font-mono">${escHtml(e.session_id || '-')}</span>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    // Tool calls
+    if (e.tool_calls && e.tool_calls.length > 0) {
+        html += `<div class="mb-4">
+            <div class="text-xs font-semibold text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <span>🔧</span> Tool Calls (${e.tool_calls.length})
+            </div>
+            <div class="space-y-2">
+                ${e.tool_calls.map(tc => {
+                    const sensitiveTag = tc.sensitive ? '<span class="badge bg-red-500/15 text-red-400 ml-2">Sensitive</span>' : '';
+                    const argsJson = tc.parameters ? JSON.stringify(tc.parameters, null, 2) : '{}';
+                    return `
+                    <div class="bg-surface-950 rounded-xl p-3 border border-gray-800/30">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-xs font-semibold text-purple-300">${escHtml(tc.name || 'unknown')}</span>
+                            ${sensitiveTag}
+                        </div>
+                        <pre class="text-[11px] text-gray-400 font-mono whitespace-pre-wrap break-all bg-surface-900 rounded-lg p-2 max-h-32 overflow-auto">${escHtml(argsJson)}</pre>
+                    </div>`;
+                }).join('')}
+            </div>
+        </div>`;
+    }
+
+    // Detections
+    html += renderEventDetail(e);
+
+    panel.innerHTML = html;
+}
 
 			function renderEventDetail(e) {
 				let html = '<div class="p-5 space-y-4 slide-down">';
@@ -787,10 +1198,16 @@ function renderEvents(events) {
 				}
 
 				// Input preview:
+				// - file monitor events: always show (it's a file change label, not sensitive content)
 				// - allowed proxy events: hide input text entirely (metadata noise)
 				// - blocked/sanitized: show "[Content blocked/sanitized]" placeholder
 				// - test results (no action): show raw text
-				if (!e.action && (e.input_preview || e.input_preview === "")) {
+				if (e.source === 'file' && e.input_preview) {
+					html += `<div>
+            <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">File Event</div>
+            <pre class="bg-surface-950 rounded-xl p-4 text-xs text-gray-300 whitespace-pre-wrap break-all font-mono border border-gray-800/30">${escHtml(e.input_preview)}</pre>
+        </div>`;
+				} else if (!e.action && (e.input_preview || e.input_preview === "")) {
 					// Test-case results — always show raw text
 					html += `<div>
             <div class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Input Text</div>
@@ -888,23 +1305,6 @@ function renderEvents(events) {
 				return html;
 			}
 
-			// Track which event IDs are expanded so auto-refresh preserves state
-			const _expandedEvents = new Set();
-
-			function toggleEventDetail(eventId, i) {
-				const detail = document.getElementById("event-detail-" + i);
-				const chevron = document.getElementById("chevron-" + i);
-				if (detail.classList.contains("hidden")) {
-					detail.classList.remove("hidden");
-					chevron.style.transform = "rotate(180deg)";
-					_expandedEvents.add(eventId);
-				} else {
-					detail.classList.add("hidden");
-					chevron.style.transform = "rotate(0deg)";
-					_expandedEvents.delete(eventId);
-				}
-			}
-
 			// ===================== Config =====================
 			const MODE_DESC = {
 				permissive:
@@ -920,15 +1320,19 @@ function renderEvents(events) {
 			let currentEditingRuleId = null;
 
 			async function loadDetectionConfig() {
-				const [config, guard, openclaw] = await Promise.all([
+				const [config, guard, openclaw, fmConfig] = await Promise.all([
 					api("/config/detection"),
 					api("/config/guard"),
 					api("/config/openclaw/session-redaction"),
+					api("/config/file-monitor"),
 				]);
 				if (config) {
 					detectionConfig = config.basic || config;
 					detailedPatterns = config.patterns || [];
 					allPatterns = [...detailedPatterns];
+				}
+				if (fmConfig) {
+					detectionConfig["file_monitor"] = fmConfig.enabled !== false;
 				}
 				renderConfigToggles();
 				renderPatternsTable();
@@ -1093,6 +1497,8 @@ function renderEvents(events) {
 			async function updateGuardMode(mode) {
 				await api("/config/guard", { method: "POST", body: JSON.stringify({ mode }) });
 				updateGuardModeBadge(mode);
+				// Also update file monitor guard mode badge
+				updateFmGuardBadge(mode);
 			}
 
 			async function updateAutoSanitize(enabled) {
@@ -1130,8 +1536,10 @@ function renderEvents(events) {
 			function renderConfigToggles() {
 				const sensitiveEl = document.getElementById("config-sensitive-toggles");
 				const threatEl = document.getElementById("config-threat-toggles");
+				const serviceEl = document.getElementById("config-service-toggles");
 				sensitiveEl.innerHTML = "";
 				threatEl.innerHTML = "";
+				if (serviceEl) serviceEl.innerHTML = "";
 
 				for (const [key, info] of Object.entries(DETECTION_ITEMS)) {
 					const checked = detectionConfig[key] !== false;
@@ -1149,11 +1557,22 @@ function renderEvents(events) {
             </div>
         </div>`;
 					if (info.group === "sensitive") sensitiveEl.innerHTML += html;
+					else if (info.group === "service" && serviceEl) serviceEl.innerHTML += html;
 					else threatEl.innerHTML += html;
 				}
 			}
 
 			async function updateConfig(key, enabled) {
+				// Route file_monitor toggle to its own endpoint
+				if (key === "file_monitor") {
+					detectionConfig[key] = enabled;
+					await api("/config/file-monitor", {
+						method: "POST",
+						body: JSON.stringify({ enabled }),
+					});
+					renderConfigToggles();
+					return;
+				}
 				detectionConfig[key] = enabled;
 				await api("/config/detection", {
 					method: "POST",
@@ -1467,6 +1886,269 @@ function showNotification(message, type = 'info') {
     }, 3000);
 }
 
+// ===================== Vaults =====================
+let _vaults = [];
+let _currentVault = null;
+let _editMode = 'form';
+let _vaultFmPaths = [];
+let _vaultFmPatterns = [];
+let _activeVaultId = null;
+
+async function loadVaults() {
+    const data = await api('/vaults/presets');
+    if (data) {
+        _vaults = data.presets || [];
+    }
+    const active = await api('/vaults/active');
+    if (active) {
+        _activeVaultId = active.active_preset_id || null;
+    }
+    renderVaultsList();
+}
+
+function renderVaultsList() {
+    const el = document.getElementById('vaults-list');
+    if (!_vaults.length) {
+        el.innerHTML = '<div class="text-center text-gray-600 text-sm py-8">No vaults</div>';
+        return;
+    }
+    el.innerHTML = _vaults.map(v => {
+        const isActive = _activeVaultId === v.id;
+        const borderClass = isActive ? 'ring-2 ring-green-500/70 border-green-500/50' : (_currentVault?.id === v.id ? 'ring-1 ring-vault-500' : 'border-gray-800/50');
+        return `
+        <div onclick="selectVault('${v.id}')" class="bg-surface-900 rounded-xl border p-4 cursor-pointer hover:border-vault-500/50 transition-colors ${borderClass}">
+            <div class="flex items-center gap-3 mb-2">
+                <span class="text-2xl">${v.icon}</span>
+                <div class="flex-1">
+                    <h5 class="text-sm font-semibold text-white">${escHtml(v.name)}</h5>
+                    <div class="flex items-center gap-2">
+                        ${v.builtin ? '<span class="text-xs text-gray-500">Builtin</span>' : '<span class="text-xs text-blue-400">Custom</span>'}
+                        ${isActive ? '<span class="text-xs font-medium text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded">Active</span>' : ''}
+                    </div>
+                </div>
+            </div>
+            <p class="text-xs text-gray-500">${escHtml(v.description)}</p>
+        </div>`;
+    }).join('');
+}
+
+async function selectVault(id) {
+    _currentVault = _vaults.find(v => v.id === id);
+    if (!_currentVault) return;
+    document.getElementById('vault-empty').classList.add('hidden');
+    document.getElementById('vault-editor').classList.remove('hidden');
+    document.getElementById('vault-icon').textContent = _currentVault.icon;
+    document.getElementById('vault-name').textContent = _currentVault.name;
+    document.getElementById('vault-desc').textContent = _currentVault.description;
+    document.getElementById('vault-delete-btn').disabled = _currentVault.builtin;
+    if (_currentVault.builtin) {
+        document.getElementById('vault-delete-btn').classList.add('opacity-50', 'cursor-not-allowed');
+    } else {
+        document.getElementById('vault-delete-btn').classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+    renderVaultEditor();
+    renderVaultsList();
+}
+
+function renderVaultEditor() {
+    if (_editMode === 'form') {
+        document.getElementById('vault-form-view').classList.remove('hidden');
+        document.getElementById('vault-yaml-view').classList.add('hidden');
+        const det = _currentVault.detection;
+        const toggles = ['api_keys', 'passwords', 'private_ips', 'pii', 'jwt_tokens', 'ssh_keys', 'credit_cards', 'emails', 'generic_secrets', 'dangerous_commands', 'prompt_injection', 'aws_credentials', 'blockchain'];
+        document.getElementById('vault-detection-toggles').innerHTML = toggles.map(k => `
+            <div class="flex items-center justify-between p-2 rounded-lg bg-surface-800/30">
+                <span class="text-xs text-gray-300">${k}</span>
+                <input type="checkbox" id="vault-det-${k}" ${det[k] ? 'checked' : ''} class="w-4 h-4">
+            </div>
+        `).join('');
+        document.getElementById('vault-guard-mode').value = _currentVault.guard.mode;
+        document.getElementById('vault-auto-sanitize').checked = _currentVault.guard.auto_sanitize;
+        document.getElementById('vault-fm-enabled').checked = _currentVault.file_monitor.enabled;
+        document.getElementById('vault-fm-home').checked = _currentVault.file_monitor.watch_home_sensitive;
+        document.getElementById('vault-fm-scan-content').checked = _currentVault.file_monitor.scan_content_on_change !== false;
+        document.getElementById('vault-fm-max-size').value = _currentVault.file_monitor.max_file_size_kb || 512;
+        document.getElementById('vault-fm-alert-create').checked = _currentVault.file_monitor.alert_on_create !== false;
+        document.getElementById('vault-fm-alert-modify').checked = _currentVault.file_monitor.alert_on_modify !== false;
+        document.getElementById('vault-fm-alert-delete').checked = _currentVault.file_monitor.alert_on_delete !== false;
+        document.getElementById('vault-fm-alert-access').checked = _currentVault.file_monitor.alert_on_access === true;
+        document.getElementById('vault-fm-access-debounce').value = _currentVault.file_monitor.access_debounce_seconds || 5;
+        _vaultFmPaths = [...(_currentVault.file_monitor.watch_paths || [])];
+        _vaultFmPatterns = [...(_currentVault.file_monitor.watch_patterns || [])];
+        renderVaultFmChips();
+    } else {
+        document.getElementById('vault-form-view').classList.add('hidden');
+        document.getElementById('vault-yaml-view').classList.remove('hidden');
+        const yaml = jsyaml.dump({
+            detection: _currentVault.detection,
+            guard: _currentVault.guard,
+            file_monitor: _currentVault.file_monitor,
+            rules: _currentVault.rules
+        });
+        document.getElementById('vault-yaml-editor').value = yaml;
+    }
+}
+
+function setEditMode(mode) {
+    _editMode = mode;
+    ['form', 'yaml'].forEach(m => {
+        const btn = document.getElementById('edit-mode-' + m);
+        if (m === mode) {
+            btn.className = 'px-3 py-1.5 text-xs font-medium bg-vault-600 text-white rounded-lg transition-colors';
+        } else {
+            btn.className = 'px-3 py-1.5 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors';
+        }
+    });
+    renderVaultEditor();
+}
+
+async function saveCurrentVault() {
+    if (!_currentVault) return;
+    const updated = { ..._currentVault };
+    if (_editMode === 'form') {
+        const toggles = ['api_keys', 'passwords', 'private_ips', 'pii', 'jwt_tokens', 'ssh_keys', 'credit_cards', 'emails', 'generic_secrets', 'dangerous_commands', 'prompt_injection', 'aws_credentials', 'blockchain'];
+        toggles.forEach(k => {
+            updated.detection[k] = document.getElementById('vault-det-' + k).checked;
+        });
+        updated.guard.mode = document.getElementById('vault-guard-mode').value;
+        updated.guard.auto_sanitize = document.getElementById('vault-auto-sanitize').checked;
+        updated.file_monitor.enabled = document.getElementById('vault-fm-enabled').checked;
+        updated.file_monitor.watch_home_sensitive = document.getElementById('vault-fm-home').checked;
+        updated.file_monitor.scan_content_on_change = document.getElementById('vault-fm-scan-content').checked;
+        updated.file_monitor.max_file_size_kb = parseInt(document.getElementById('vault-fm-max-size').value) || 512;
+        updated.file_monitor.alert_on_create = document.getElementById('vault-fm-alert-create').checked;
+        updated.file_monitor.alert_on_modify = document.getElementById('vault-fm-alert-modify').checked;
+        updated.file_monitor.alert_on_delete = document.getElementById('vault-fm-alert-delete').checked;
+        updated.file_monitor.alert_on_access = document.getElementById('vault-fm-alert-access').checked;
+        updated.file_monitor.access_debounce_seconds = parseInt(document.getElementById('vault-fm-access-debounce').value) || 5;
+        updated.file_monitor.watch_paths = [..._vaultFmPaths];
+        updated.file_monitor.watch_patterns = [..._vaultFmPatterns];
+    } else {
+        try {
+            const parsed = jsyaml.load(document.getElementById('vault-yaml-editor').value);
+            updated.detection = parsed.detection;
+            updated.guard = parsed.guard;
+            updated.file_monitor = parsed.file_monitor;
+            updated.rules = parsed.rules || [];
+        } catch (e) {
+            showNotification('YAML format error: ' + e.message, 'error');
+            return;
+        }
+    }
+    if (_currentVault.builtin) {
+        // Builtin presets cannot be modified — save as a new custom copy
+        const copyName = updated.name + ' (Custom)';
+        const result = await api('/vaults/presets', 'POST', {
+            name: copyName,
+            description: updated.description,
+        });
+        if (!result || !result.preset) {
+            showNotification('Failed to create copy', 'error');
+            return;
+        }
+        // Update the new copy with the edited config
+        const newId = result.preset.id;
+        updated.id = newId;
+        updated.name = copyName;
+        updated.builtin = false;
+        const updateResult = await api('/vaults/presets/' + newId, 'PUT', updated);
+        if (updateResult) {
+            showNotification('Saved as "' + copyName + '"', 'success');
+            await loadVaults();
+            selectVault(newId);
+        }
+    } else {
+        const result = await api('/vaults/presets/' + _currentVault.id, 'PUT', updated);
+        if (result) {
+            showNotification('Saved successfully', 'success');
+            await loadVaults();
+            selectVault(_currentVault.id);
+        }
+    }
+}
+
+async function applyCurrentVault() {
+    if (!_currentVault) return;
+    const result = await api('/vaults/presets/' + _currentVault.id + '/apply', 'POST');
+    if (result) {
+        _activeVaultId = _currentVault.id;
+        renderVaultsList();
+        showNotification('Configuration applied', 'success');
+    }
+}
+
+async function deleteCurrentVault() {
+    if (!_currentVault || _currentVault.builtin) return;
+    if (!confirm('Delete vault "' + _currentVault.name + '"?')) return;
+    const result = await api('/vaults/presets/' + _currentVault.id, 'DELETE');
+    if (result) {
+        showNotification('Deleted', 'success');
+        _currentVault = null;
+        document.getElementById('vault-editor').classList.add('hidden');
+        document.getElementById('vault-empty').classList.remove('hidden');
+        await loadVaults();
+    }
+}
+
+function renderVaultFmChips() {
+    const pathsEl = document.getElementById('vault-fm-extra-paths');
+    if (pathsEl) pathsEl.innerHTML = _vaultFmPaths.map((p, i) =>
+        `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-surface-800 border border-gray-700/50 text-xs text-gray-300">${p}<button onclick="removeVaultFmPath(${i})" class="text-gray-500 hover:text-red-400 ml-0.5">&times;</button></span>`
+    ).join('');
+    const patsEl = document.getElementById('vault-fm-patterns');
+    if (patsEl) patsEl.innerHTML = _vaultFmPatterns.map((p, i) =>
+        `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-surface-800 border border-gray-700/50 text-xs text-gray-300 font-mono">${p}<button onclick="removeVaultFmPattern(${i})" class="text-gray-500 hover:text-red-400 ml-0.5">&times;</button></span>`
+    ).join('');
+}
+function addVaultFmPath() {
+    const input = document.getElementById('vault-fm-add-path');
+    const v = input.value.trim();
+    if (v && !_vaultFmPaths.includes(v)) { _vaultFmPaths.push(v); renderVaultFmChips(); }
+    input.value = '';
+}
+function removeVaultFmPath(i) { _vaultFmPaths.splice(i, 1); renderVaultFmChips(); }
+function addVaultFmPattern() {
+    const input = document.getElementById('vault-fm-add-pattern');
+    const v = input.value.trim();
+    if (v && !_vaultFmPatterns.includes(v)) { _vaultFmPatterns.push(v); renderVaultFmChips(); }
+    input.value = '';
+}
+function removeVaultFmPattern(i) { _vaultFmPatterns.splice(i, 1); renderVaultFmChips(); }
+
+async function createNewVault() {
+    const name = prompt('Vault name:');
+    if (!name) return;
+    const desc = prompt('Description:') || '';
+    const result = await api('/vaults/presets', 'POST', { name, description: desc });
+    if (result) {
+        showNotification('Created successfully', 'success');
+        await loadVaults();
+        selectVault(result.id);
+    }
+}
+
+function toggleVaultTest() {
+    const panel = document.getElementById('vault-test-panel');
+    const arrow = document.getElementById('vault-test-arrow');
+    panel.classList.toggle('hidden');
+    arrow.classList.toggle('rotate-180');
+}
+
+async function runVaultTest() {
+    const text = document.getElementById('vault-test-input').value;
+    if (!text) return;
+    const result = await api('/scan', 'POST', { text });
+    const el = document.getElementById('vault-test-result');
+    if (result) {
+        el.classList.remove('hidden');
+        el.innerHTML = `
+            <div class="text-xs text-gray-400 mb-2">Detection Result:</div>
+            <div class="text-sm text-white">Threats: ${result.has_threats ? '<span class="text-red-400">Yes</span>' : '<span class="text-green-400">No</span>'}</div>
+            <div class="text-sm text-white">Action: <span class="text-blue-400">${result.action}</span></div>
+        `;
+    }
+}
+
 // ===================== Test Cases =====================
 let testViewMode = 'card';
 
@@ -1649,6 +2331,295 @@ function showTestResult(result) {
     refreshDashboard();
 }
 
+// ===================== File Monitor =====================
+
+let _fmConfig = {};
+
+function renderFileMonitorStatus(status) {
+    if (!status) return;
+
+    const dot = document.getElementById('fm-status-dot');
+    const text = document.getElementById('fm-status-text');
+    if (status.running) {
+        dot.className = 'w-2.5 h-2.5 bg-vault-500 rounded-full pulse-dot';
+        text.className = 'text-sm font-semibold text-vault-400';
+        text.textContent = 'Monitoring';
+    } else if (status.enabled) {
+        dot.className = 'w-2.5 h-2.5 bg-yellow-500 rounded-full';
+        text.className = 'text-sm font-semibold text-yellow-400';
+        text.textContent = 'Enabled (not running)';
+    } else {
+        dot.className = 'w-2.5 h-2.5 bg-gray-500 rounded-full';
+        text.className = 'text-sm font-semibold text-gray-400';
+        text.textContent = 'Disabled';
+    }
+    document.getElementById('fm-watch-roots').textContent = (status.watch_roots || []).length;
+    document.getElementById('fm-event-count').textContent = status.event_count || 0;
+    document.getElementById('fm-alert-count').textContent = status.alert_count || 0;
+
+    const rootsEl = document.getElementById('fm-roots-list');
+    if (status.watch_roots && status.watch_roots.length) {
+        rootsEl.innerHTML = status.watch_roots.map(r =>
+            `<div class="flex items-center gap-2 py-1 px-2 rounded bg-surface-800/50">
+                <svg class="w-3 h-3 text-vault-500 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                <span class="text-gray-300 break-all">${escHtml(r)}</span>
+            </div>`
+        ).join('');
+    } else {
+        rootsEl.innerHTML = '<div class="text-gray-600">No directories being monitored</div>';
+    }
+
+    if (status.last_watch_error) {
+        rootsEl.innerHTML += `<div class="mt-2 px-2 py-1.5 rounded bg-red-500/10 border border-red-500/20 text-xs text-red-400">Error: ${escHtml(status.last_watch_error)}</div>`;
+    }
+}
+
+async function refreshFileMonitorData() {
+    const [status, events, alerts] = await Promise.all([
+        api('/file-monitor/status'),
+        api('/file-monitor/events?limit=100'),
+        api('/file-monitor/alerts?limit=50'),
+    ]);
+
+    renderFileMonitorStatus(status);
+    renderFileEvents(events || []);
+    renderFileAlerts(alerts || []);
+}
+
+async function loadFileMonitor() {
+    const [status, events, alerts, fmCfg] = await Promise.all([
+        api('/file-monitor/status'),
+        api('/file-monitor/events?limit=100'),
+        api('/file-monitor/alerts?limit=50'),
+        api('/config/file-monitor'),
+    ]);
+
+    if (fmCfg) {
+        _fmConfig = fmCfg;
+        renderFmConfig(fmCfg);
+    }
+
+    renderFileMonitorStatus(status);
+    renderFileEvents(events || []);
+    renderFileAlerts(alerts || []);
+}
+
+async function loadFmConfigForSettings() {
+    const fmCfg = await api('/config/file-monitor');
+    if (fmCfg) {
+        _fmConfig = fmCfg;
+        renderFmConfig(fmCfg);
+    }
+}
+
+const FM_CHANGE_BADGE = {
+    created:  { bg: 'bg-green-500/10', text: 'text-green-400', label: 'Created' },
+    modified: { bg: 'bg-yellow-500/10', text: 'text-yellow-400', label: 'Modified' },
+    deleted:  { bg: 'bg-red-500/10', text: 'text-red-400', label: 'Deleted' },
+    accessed: { bg: 'bg-blue-500/10', text: 'text-blue-400', label: 'Accessed' },
+};
+const FM_ACTION_BADGE = {
+    block:    { bg: 'bg-red-500/10',    text: 'text-red-400',    label: 'BLOCKED' },
+    ask_user: { bg: 'bg-yellow-500/10', text: 'text-yellow-400', label: 'REVIEW' },
+    log:      { bg: 'bg-gray-500/10',   text: 'text-gray-400',   label: 'LOGGED' },
+    allow:    { bg: 'bg-green-500/10',  text: 'text-green-400',  label: 'OK' },
+};
+
+function renderFileEvents(events) {
+    const tbody = document.getElementById('fm-events-body');
+    if (!events.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-600 text-sm">No file events yet</td></tr>';
+        return;
+    }
+    tbody.innerHTML = events.map(e => {
+        const cb = FM_CHANGE_BADGE[e.change_type] || FM_CHANGE_BADGE.modified;
+        const ab = FM_ACTION_BADGE[e.action_taken] || FM_ACTION_BADGE.allow;
+        const time = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '';
+        const threatBadge = e.has_threats
+            ? `<span class="badge bg-red-500/10 text-red-400">${e.sensitive_count}</span>`
+            : '<span class="text-gray-600">-</span>';
+        const riskBadge = e.risk_score > 0
+            ? `<span class="badge bg-orange-500/10 text-orange-400">${e.risk_score.toFixed(1)}</span>`
+            : '<span class="text-gray-600">0</span>';
+        return `
+        <tr class="hover:bg-surface-800/30 transition-colors">
+            <td class="px-4 py-2 text-xs text-gray-500 font-mono">${time}</td>
+            <td class="px-4 py-2"><span class="badge ${cb.bg} ${cb.text}">${cb.label}</span></td>
+            <td class="px-4 py-2 text-xs text-gray-200 max-w-[200px] truncate" title="${escHtml(e.file_path)}">${escHtml(e.file_name)}</td>
+            <td class="px-4 py-2 text-xs text-gray-500 font-mono">${escHtml(e.matched_pattern || '-')}</td>
+            <td class="px-4 py-2 text-center"><span class="badge ${ab.bg} ${ab.text}">${ab.label}</span></td>
+            <td class="px-4 py-2 text-center">${threatBadge}</td>
+            <td class="px-4 py-2 text-center">${riskBadge}</td>
+        </tr>`;
+    }).join('');
+}
+
+function renderFileAlerts(alerts) {
+    const el = document.getElementById('fm-alerts-list');
+    if (!alerts.length) {
+        el.innerHTML = '<div class="text-center text-gray-600 text-xs py-8">No alerts</div>';
+        return;
+    }
+    const sevColors = { critical: 'bg-red-500', high: 'bg-orange-500', medium: 'bg-yellow-500', low: 'bg-blue-500' };
+    el.innerHTML = alerts.map(a => {
+        const dot = sevColors[a.severity] || 'bg-gray-500';
+        const time = a.timestamp ? new Date(a.timestamp).toLocaleTimeString() : '';
+        const cb = FM_CHANGE_BADGE[a.change_type] || FM_CHANGE_BADGE.modified;
+        const actionTag = a.needs_user_action
+            ? '<span class="badge bg-yellow-500/10 text-yellow-400 text-[10px] ml-1">Needs Review</span>'
+            : (a.action_taken === 'block' ? '<span class="badge bg-red-500/10 text-red-400 text-[10px] ml-1">Blocked</span>' : '');
+        return `
+        <div class="bg-surface-950 rounded-xl p-3 border border-gray-800/30">
+            <div class="flex items-center gap-2 mb-1">
+                <span class="w-2 h-2 ${dot} rounded-full shrink-0"></span>
+                <span class="badge ${cb.bg} ${cb.text} text-[10px]">${cb.label}</span>${actionTag}
+                <span class="text-[10px] text-gray-600 font-mono ml-auto">${time}</span>
+            </div>
+            <div class="text-xs text-gray-300">${escHtml(a.summary)}</div>
+            <div class="text-[10px] text-gray-500 mt-1 truncate" title="${escHtml(a.file_path)}">${escHtml(a.file_path)}</div>
+        </div>`;
+    }).join('');
+}
+
+// ---- File Monitor Config Management ----
+
+function renderFmConfig(cfg) {
+    const enabledEl = document.getElementById('fm-cfg-enabled');
+    if (enabledEl) enabledEl.checked = cfg.enabled !== false;
+
+    const watchHomeEl = document.getElementById('fm-cfg-watch-home');
+    if (watchHomeEl) watchHomeEl.checked = cfg.watch_home_sensitive !== false;
+
+    const scanContentEl = document.getElementById('fm-cfg-scan-content');
+    if (scanContentEl) scanContentEl.checked = cfg.scan_content_on_change !== false;
+
+    const maxSizeEl = document.getElementById('fm-cfg-max-size');
+    if (maxSizeEl) maxSizeEl.value = cfg.max_file_size_kb || 512;
+
+    const alertCreateEl = document.getElementById('fm-cfg-alert-create');
+    if (alertCreateEl) alertCreateEl.checked = cfg.alert_on_create !== false;
+
+    const alertModifyEl = document.getElementById('fm-cfg-alert-modify');
+    if (alertModifyEl) alertModifyEl.checked = cfg.alert_on_modify !== false;
+
+    const alertDeleteEl = document.getElementById('fm-cfg-alert-delete');
+    if (alertDeleteEl) alertDeleteEl.checked = cfg.alert_on_delete !== false;
+
+    const alertAccessEl = document.getElementById('fm-cfg-alert-access');
+    if (alertAccessEl) alertAccessEl.checked = cfg.alert_on_access === true;
+
+    const accessDebounceEl = document.getElementById('fm-cfg-access-debounce');
+    if (accessDebounceEl) accessDebounceEl.value = cfg.access_debounce_seconds || 5;
+
+    // Watch paths chips
+    const pathsEl = document.getElementById('fm-cfg-extra-paths');
+    if (pathsEl) {
+        pathsEl.innerHTML = (cfg.watch_paths || []).map((p, i) =>
+            `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-800 border border-gray-700/50 text-xs text-gray-300">
+                <span class="font-mono">${escHtml(p)}</span>
+                <button onclick="removeFmWatchPath(${i})" class="text-red-400 hover:text-red-300 ml-0.5">&times;</button>
+            </span>`
+        ).join('');
+    }
+
+    // Watch patterns chips
+    const patternsEl = document.getElementById('fm-cfg-patterns');
+    if (patternsEl) {
+        patternsEl.innerHTML = (cfg.watch_patterns || []).map((p, i) =>
+            `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-800 border border-gray-700/50 text-xs text-gray-300">
+                <span class="font-mono">${escHtml(p)}</span>
+                <button onclick="removeFmWatchPattern(${i})" class="text-red-400 hover:text-red-300 ml-0.5">&times;</button>
+            </span>`
+        ).join('');
+    }
+
+    // Guard mode badge
+    updateFmGuardBadge(cfg.guard_mode || 'permissive');
+}
+
+function updateFmGuardBadge(mode) {
+    const badge = document.getElementById('fm-guard-badge');
+    const desc = document.getElementById('fm-guard-desc');
+    if (!badge) return;
+    const FM_MODE = {
+        strict:      { color: 'bg-red-500/10 text-red-400',    desc: 'File threats generate CRITICAL alerts. Maximum severity enforced.' },
+        interactive: { color: 'bg-yellow-500/10 text-yellow-400', desc: 'File threats require user review. High-severity alerts with action needed.' },
+        permissive:  { color: 'bg-green-500/10 text-green-400',  desc: 'File threats logged only. No blocking action taken.' },
+    };
+    const m = FM_MODE[mode] || FM_MODE.permissive;
+    badge.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ' + m.color;
+    badge.textContent = mode;
+    if (desc) desc.textContent = m.desc;
+}
+
+async function updateFileMonitorEnabled(enabled) {
+    const result = await api('/config/file-monitor', {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
+    });
+    if (result) {
+        _fmConfig = result;
+        renderFmConfig(result);
+        await refreshFileMonitorData();
+    }
+}
+
+async function saveFmConfig() {
+    const payload = {
+        watch_home_sensitive: document.getElementById('fm-cfg-watch-home')?.checked ?? true,
+        watch_paths: _fmConfig.watch_paths || [],
+        watch_patterns: _fmConfig.watch_patterns || [],
+        scan_content_on_change: document.getElementById('fm-cfg-scan-content')?.checked ?? true,
+        max_file_size_kb: parseInt(document.getElementById('fm-cfg-max-size')?.value) || 512,
+        alert_on_create: document.getElementById('fm-cfg-alert-create')?.checked ?? true,
+        alert_on_modify: document.getElementById('fm-cfg-alert-modify')?.checked ?? true,
+        alert_on_delete: document.getElementById('fm-cfg-alert-delete')?.checked ?? true,
+        alert_on_access: document.getElementById('fm-cfg-alert-access')?.checked ?? false,
+        access_debounce_seconds: parseInt(document.getElementById('fm-cfg-access-debounce')?.value) || 5,
+    };
+    const result = await api('/config/file-monitor', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+    if (result) {
+        _fmConfig = result;
+        renderFmConfig(result);
+        await refreshFileMonitorData();
+    }
+}
+
+function addFmWatchPath() {
+    const input = document.getElementById('fm-cfg-add-path');
+    const path = input.value.trim();
+    if (!path) return;
+    _fmConfig.watch_paths = [...(_fmConfig.watch_paths || []), path];
+    input.value = '';
+    saveFmConfig();
+}
+
+function removeFmWatchPath(index) {
+    const paths = [...(_fmConfig.watch_paths || [])];
+    paths.splice(index, 1);
+    _fmConfig.watch_paths = paths;
+    saveFmConfig();
+}
+
+function addFmWatchPattern() {
+    const input = document.getElementById('fm-cfg-add-pattern');
+    const pattern = input.value.trim();
+    if (!pattern) return;
+    _fmConfig.watch_patterns = [...(_fmConfig.watch_patterns || []), pattern];
+    input.value = '';
+    saveFmConfig();
+}
+
+function removeFmWatchPattern(index) {
+    const patterns = [...(_fmConfig.watch_patterns || [])];
+    patterns.splice(index, 1);
+    _fmConfig.watch_patterns = patterns;
+    saveFmConfig();
+}
+
 // ===================== Utils =====================
 function escHtml(str) {
     if (!str) return '';
@@ -1656,7 +2627,7 @@ function escHtml(str) {
 }
 
 async function refreshAll() {
-    await refreshDashboard();
+    await refreshMonitor();
     if (currentTab === 'events') await loadScanHistory();
 }
 
@@ -1665,7 +2636,11 @@ let _autoRefreshInterval = null;
 function startAutoRefresh() {
     if (_autoRefreshInterval) return;
     _autoRefreshInterval = setInterval(async () => {
-        await refreshDashboard();
+        if (currentTab === 'dashboard' || currentTab === 'events') {
+            await refreshMonitor();
+        }
+        if (currentTab === 'events') await loadScanHistory();
+        if (currentTab === 'filemonitor') await loadFileMonitor();
     }, 5000);
 }
 function stopAutoRefresh() {
@@ -1992,9 +2967,130 @@ function loadAttackCases() {
 				}
 			}
 
+			// ===================== Local Scan =====================
+
+			async function runLocalScan() {
+				const btn = document.getElementById('ls-run-btn');
+				const scanType = document.getElementById('ls-scan-type').value;
+				const path = document.getElementById('ls-scan-path').value || null;
+				btn.disabled = true;
+				btn.textContent = 'Scanning...';
+				const resultEl = document.getElementById('ls-scan-result');
+				resultEl.className = 'mt-4';
+				resultEl.innerHTML = '<div class="text-sm text-gray-400">Scanning...</div>';
+				try {
+					const r = await api('/local-scan/run', 'POST', { scan_type: scanType, path });
+					if (r.error) {
+						resultEl.innerHTML = `<div class="text-red-400 text-sm">${escHtml(r.error)}</div>`;
+					} else {
+						const tc = THREAT_COLORS[r.threat_level] || THREAT_COLORS.safe;
+						let html = `<div class="bg-surface-800 rounded-xl p-4">
+							<div class="flex items-center gap-3 mb-3">
+								<span class="badge ${tc.bg} ${tc.text} uppercase">${r.threat_level}</span>
+								<span class="text-sm text-gray-300">${r.files_scanned} files scanned in ${r.duration_seconds}s</span>
+								<span class="text-sm text-gray-500">${r.findings.length} findings</span>
+							</div>`;
+						if (r.findings.length) {
+							html += `<div class="space-y-1 max-h-60 overflow-y-auto">`;
+							for (const f of r.findings.slice(0, 50)) {
+								const riskColor = f.risk_score >= 7 ? 'text-red-400' : f.risk_score >= 4 ? 'text-yellow-400' : 'text-gray-400';
+								html += `<div class="flex items-center gap-2 text-xs py-1 border-b border-gray-800/30">
+									<span class="${riskColor} font-mono w-8">${f.risk_score.toFixed(1)}</span>
+									<span class="text-gray-500 w-20">${escHtml(f.finding_type)}</span>
+									<span class="text-cyan-400 w-40 truncate" title="${escHtml(f.file_path)}">${escHtml(f.file_path)}</span>
+									<span class="text-gray-300 flex-1 truncate">${escHtml(f.description)}</span>
+								</div>`;
+							}
+							html += `</div>`;
+						}
+						html += `</div>`;
+						resultEl.innerHTML = html;
+					}
+					loadLocalScanHistory();
+				} catch (e) {
+					resultEl.innerHTML = `<div class="text-red-400 text-sm">Error: ${escHtml(e.message)}</div>`;
+				} finally {
+					btn.disabled = false;
+					btn.textContent = 'Run Scan';
+				}
+			}
+
+			function showAddScheduleForm() {
+				document.getElementById('ls-add-schedule-form').classList.remove('hidden');
+			}
+			function hideAddScheduleForm() {
+				document.getElementById('ls-add-schedule-form').classList.add('hidden');
+			}
+
+			async function addLocalScanSchedule() {
+				const cron = document.getElementById('ls-sched-cron').value.trim();
+				const scan_type = document.getElementById('ls-sched-type').value;
+				const path = document.getElementById('ls-sched-path').value.trim();
+				if (!cron) return alert('Cron expression is required');
+				const r = await api('/local-scan/schedules', 'POST', { cron, scan_type, path, max_files: 100 });
+				if (r.error) { alert(r.error); return; }
+				hideAddScheduleForm();
+				loadLocalScanSchedules();
+			}
+
+			async function removeLocalScanSchedule(id) {
+				if (!confirm('Remove this schedule?')) return;
+				await api('/local-scan/schedules/' + id, 'DELETE');
+				loadLocalScanSchedules();
+			}
+
+			async function loadLocalScanSchedules() {
+				const el = document.getElementById('ls-schedules-list');
+				try {
+					const schedules = await api('/local-scan/schedules');
+					if (!schedules.length) {
+						el.innerHTML = '<div class="text-center text-gray-600 text-sm py-6">No scheduled scans. Click "+ Add Schedule" to create one.</div>';
+						return;
+					}
+					el.innerHTML = schedules.map(s => `
+						<div class="flex items-center gap-3 bg-surface-800 rounded-xl p-3">
+							<span class="font-mono text-sm text-green-400 w-28">${escHtml(s.cron)}</span>
+							<span class="badge bg-yellow-500/10 text-yellow-400 text-xs">${escHtml(s.scan_type)}</span>
+							<span class="text-sm text-gray-300 flex-1 truncate">${escHtml(s.path)}</span>
+							<span class="text-xs text-gray-500">${s.enabled ? 'Active' : 'Disabled'}</span>
+							<button onclick="removeLocalScanSchedule('${escHtml(s.id)}')" class="px-2 py-1 text-xs text-red-400 hover:bg-red-500/10 rounded">Remove</button>
+						</div>
+					`).join('');
+				} catch (e) {
+					el.innerHTML = `<div class="text-center text-red-400 text-sm py-6">Failed to load schedules</div>`;
+				}
+			}
+
+			async function loadLocalScanHistory() {
+				const el = document.getElementById('ls-history-list');
+				try {
+					const history = await api('/local-scan/history?limit=20');
+					if (!history.length) {
+						el.innerHTML = '<div class="text-center text-gray-600 text-sm py-6">No scan history yet. Run a scan to see results.</div>';
+						return;
+					}
+					el.innerHTML = history.map(r => {
+						const tc = THREAT_COLORS[r.threat_level] || THREAT_COLORS.safe;
+						const time = r.timestamp ? new Date(r.timestamp).toLocaleString() : '';
+						return `
+						<div class="flex items-center gap-3 bg-surface-800 rounded-xl p-3">
+							<span class="badge ${tc.bg} ${tc.text} uppercase text-[10px] w-16 text-center">${r.threat_level}</span>
+							<span class="badge bg-yellow-500/10 text-yellow-400 text-xs">${r.scan_type}</span>
+							<span class="text-sm text-gray-300 flex-1 truncate" title="${escHtml(r.path)}">${escHtml(r.path)}</span>
+							<span class="text-xs text-gray-500">${r.files_scanned} files</span>
+							<span class="text-xs ${r.findings?.length ? 'text-red-400' : 'text-gray-500'}">${r.findings?.length || 0} findings</span>
+							<span class="text-xs text-gray-600 font-mono">${time}</span>
+						</div>`;
+					}).join('');
+				} catch (e) {
+					el.innerHTML = `<div class="text-center text-red-400 text-sm py-6">Failed to load history</div>`;
+				}
+			}
+
 			// ===================== Init =====================
+			initCharts();
 			switchTab("dashboard");
-			refreshDashboard();
+			refreshMonitor();
 			startAutoRefresh();
 		</script>
 	</body>

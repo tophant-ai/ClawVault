@@ -202,11 +202,13 @@ def test_run_recovers_after_watch_failure(tmp_path: Path) -> None:
 def test_start_realtime_redacts_new_file_under_openclaw_root(tmp_path: Path) -> None:
     sessions_root = tmp_path / ".openclaw" / "agents"
     transcript = sessions_root / "main" / "sessions" / "sess-1.jsonl"
+    transcript.parent.mkdir(parents=True)
     service = OpenClawSessionRedactionService(
         OpenClawSessionRedactionConfig(
             enabled=True,
             sessions_root=sessions_root,
             state_file=tmp_path / "state.json",
+            auto_discover_sessions_roots=False,
             watch_debounce_ms=10,
             watch_step_ms=10,
         )
@@ -214,7 +216,7 @@ def test_start_realtime_redacts_new_file_under_openclaw_root(tmp_path: Path) -> 
 
     service.start()
     try:
-        transcript.parent.mkdir(parents=True)
+        time.sleep(0.2)  # let watcher thread register inotify watches
         transcript.write_text(
             '{"type":"assistant","content":"drop-prev"}\n'
             '{"errorMessage":"403 [ClawVault] blocked"}\n',
@@ -236,6 +238,7 @@ def test_start_realtime_redacts_appended_pair_under_openclaw_root(tmp_path: Path
             enabled=True,
             sessions_root=sessions_root,
             state_file=tmp_path / "state.json",
+            auto_discover_sessions_roots=False,
             watch_debounce_ms=10,
             watch_step_ms=10,
         )
@@ -295,6 +298,7 @@ def test_start_realtime_redacts_file_promoted_from_lock_via_rename(tmp_path: Pat
             enabled=True,
             sessions_root=sessions_root,
             state_file=tmp_path / "state.json",
+            auto_discover_sessions_roots=False,
             watch_debounce_ms=10,
             watch_step_ms=10,
         )
@@ -302,6 +306,7 @@ def test_start_realtime_redacts_file_promoted_from_lock_via_rename(tmp_path: Pat
 
     service.start()
     try:
+        time.sleep(0.2)  # let watcher thread register inotify watches
         staged_path.write_text(
             '{"type":"assistant","content":"drop-prev"}\n'
             '{"errorMessage":"403 [ClawVault] blocked"}\n',

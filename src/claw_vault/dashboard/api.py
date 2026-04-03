@@ -10,9 +10,8 @@ from typing import Optional
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
-from claw_vault.config import DEFAULT_AGENTS_FILE
 from claw_vault.guard.rule_generator import RuleGenerator
-from claw_vault.guard.rules_store import RuleConfig, export_rules, load_rules, save_rules
+from claw_vault.guard.rules_store import RuleConfig, export_rules, load_rules
 
 router = APIRouter(tags=["dashboard"])
 
@@ -26,6 +25,10 @@ _budget_manager = None
 _settings = None
 _rule_engine = None
 _openclaw_service = None
+_file_monitor_service = None
+_proxy_server = None
+_local_scan_scheduler = None
+_active_preset_id: str | None = None
 _rules: list[RuleConfig] = []
 
 # --------------- In-memory stores ---------------
@@ -52,35 +55,32 @@ _global_detection_config: dict[str, bool] = {
 _scan_history: list[dict] = []
 """Stores recent scan results for the events feed."""
 
+_token_trend: list[dict] = []
+"""Time-series token usage data binned by 5 minutes. Max 288 entries (24h)."""
 
-# --------------- Agents persistence ---------------
+_tool_call_trend: list[dict] = []
+"""Time-series tool call counts binned by 5 minutes. Max 288 entries."""
+
+_analysis_log: list[dict] = []
+"""Recent analysis log lines. Max 200 entries."""
+
+_security_events: list[dict] = []
+"""Security event timeline. Max 100 entries."""
+
+_file_monitor_events: list[dict] = []
+"""File monitor events ring buffer. Max 200 entries."""
+
+_file_monitor_alerts: list[dict] = []
+"""File monitor alerts ring buffer. Max 100 entries."""
+
+# Sensitive tool names that get a "敏感" badge
+_SENSITIVE_TOOLS = {
+    "bash", "exec", "execute", "run_command", "computer", "shell",
+    "terminal", "process", "execute_command", "run", "cmd",
+}
 
 
-def _load_agents() -> dict[str, dict]:
-    """Load agents from ~/.ClawVault/agents.yaml."""
-    import yaml
-
-    if not DEFAULT_AGENTS_FILE.exists():
-        return {}
-    try:
-        with open(DEFAULT_AGENTS_FILE, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        return data.get("agents", {})
-    except Exception:
-        return {}
-
-
-def _save_agents() -> None:
-    """Persist agents to ~/.ClawVault/agents.yaml."""
-    import yaml
-
-    DEFAULT_AGENTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    data = {
-        "version": "1.0",
-        "agents": _agents,
-    }
-    with open(DEFAULT_AGENTS_FILE, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+# --------------- Agents (loaded from unified config) ---------------
 
 
 def get_agent_config(agent_id: str | None) -> dict:
@@ -138,16 +138,22 @@ def set_dependencies(
     settings=None,
     rule_engine=None,
     openclaw_service=None,
+    file_monitor_service=None,
+    proxy_server=None,
+    local_scan_scheduler=None,
 ):
     """Inject shared dependencies from the main application."""
     global _audit_store, _token_counter, _budget_manager, _settings, _rule_engine, _agents
-    global _openclaw_service
+    global _openclaw_service, _file_monitor_service, _proxy_server, _local_scan_scheduler
     _audit_store = audit_store
     _token_counter = token_counter
     _budget_manager = budget_manager
     _settings = settings
     _rule_engine = rule_engine
     _openclaw_service = openclaw_service
+    _file_monitor_service = file_monitor_service
+    _proxy_server = proxy_server
+    _local_scan_scheduler = local_scan_scheduler
     # Sync in-memory detection config from settings
     if settings:
         det = settings.detection
@@ -164,16 +170,30 @@ def set_dependencies(
         _global_detection_config["generic_secrets"] = det.generic_secrets
         _global_detection_config["dangerous_commands"] = det.dangerous_commands
         _global_detection_config["prompt_injection"] = det.prompt_injection
-    # Load persisted agents first
-    _agents = _load_agents()
+    # Load agents from unified config
+    _agents = dict(settings.agents.entries) if settings else {}
     # Auto-discover OpenClaw agents (merge with persisted)
     _sync_openclaw_agents()
 
-    # Load custom rules from disk and push into the live rule engine
+    # Restore active vault preset from persisted config
+    global _active_preset_id
+    if settings and settings.vaults.active_preset_id:
+        _active_preset_id = settings.vaults.active_preset_id
+
+    # Load custom rules from config and push into the live rule engine
     global _rules
-    _rules = load_rules()
+    _rules = load_rules(raw_rules=settings.rules) if settings else load_rules()
     if _rule_engine and hasattr(_rule_engine, "set_rules"):
         _rule_engine.set_rules(_rules)
+
+
+def _clear_active_preset() -> None:
+    """Clear the active preset when config is manually changed outside of preset apply."""
+    global _active_preset_id
+    if _active_preset_id is not None:
+        _active_preset_id = None
+        if _settings:
+            _settings.vaults.active_preset_id = None
 
 
 # --------------- Pydantic models ---------------
@@ -212,6 +232,22 @@ class OpenClawSessionRedactionUpdate(BaseModel):
     enabled: bool
 
 
+class FileMonitorConfigUpdate(BaseModel):
+    enabled: bool | None = None
+    watch_home_sensitive: bool | None = None
+    watch_paths: list[str] | None = None
+    watch_patterns: list[str] | None = None
+    scan_content_on_change: bool | None = None
+    max_file_size_kb: int | None = None
+    watch_debounce_ms: int | None = None
+    watch_step_ms: int | None = None
+    alert_on_delete: bool | None = None
+    alert_on_create: bool | None = None
+    alert_on_modify: bool | None = None
+    alert_on_access: bool | None = None
+    access_debounce_seconds: int | None = None
+
+
 class RulesPayload(BaseModel):
     """Payload for replacing the full custom rule set."""
 
@@ -248,10 +284,26 @@ async def health():
             _openclaw_service, "last_watch_error", None
         )
 
+    file_monitor = {
+        "enabled": False,
+        "running": False,
+    }
+    if _file_monitor_service:
+        file_monitor["enabled"] = _file_monitor_service.enabled
+        file_monitor["running"] = _file_monitor_service.running
+
+    proxy = {"paused": False}
+    if _proxy_server:
+        proxy["paused"] = _proxy_server.is_paused
+        if _proxy_server.pause_info:
+            proxy.update(_proxy_server.pause_info)
+
     return {
         "status": "ok",
         "version": "0.1.0",
         "openclaw_session_redaction": openclaw_session_redaction,
+        "file_monitor": file_monitor,
+        "proxy": proxy,
     }
 
 
@@ -345,19 +397,27 @@ async def scan_text(text: str = Query(..., description="Text to scan for threats
 @router.post("/scan")
 async def scan_text_post(req: ScanRequest):
     """POST version of scan – supports larger text payloads and agent context."""
-    result = _run_scan(req.text, agent_id=req.agent_id)
-    # store in history with source='test' so events tab can filter these out
     import datetime
 
+    result = _run_scan(req.text, agent_id=req.agent_id)
+    now_ts = datetime.datetime.utcnow().isoformat() + "Z"
+    agent_name = (
+        _agents[req.agent_id]["name"]
+        if req.agent_id and req.agent_id in _agents
+        else None
+    )
     entry = {
         "id": str(uuid.uuid4()),
-        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "timestamp": now_ts,
         "source": "test",
         "agent_id": req.agent_id,
-        "agent_name": _agents[req.agent_id]["name"]
-        if req.agent_id and req.agent_id in _agents
-        else None,
-        "input_preview": req.text[:120],
+        "agent_name": agent_name,
+        "session_id": None,
+        "input_preview": req.text[:200],
+        "action": None,
+        "tool_calls": [],
+        "tool_call_count": 0,
+        "message_count": 0,
         **result,
     }
     _scan_history.insert(0, entry)
@@ -369,21 +429,61 @@ async def scan_text_post(req: ScanRequest):
         stats["scans"] += 1
         if result["has_threats"]:
             stats["threats"] += 1
+
+    # Push to analysis log so dashboard shows activity
+    threat_label = result.get("threat_level", "safe").upper()
+    log_msg = f"[TEST] {threat_label}: {req.text[:80]}"
+    _analysis_log.insert(0, {"ts": now_ts, "level": "warn" if result["has_threats"] else "info", "message": log_msg})
+    if len(_analysis_log) > 200:
+        _analysis_log.pop()
+
+    # Push to security events if threats detected
+    if result["has_threats"]:
+        summary_parts = []
+        if result.get("sensitive"):
+            summary_parts.append(f"{len(result['sensitive'])} sensitive data")
+        if result.get("commands"):
+            summary_parts.append(f"{len(result['commands'])} dangerous commands")
+        if result.get("injections"):
+            summary_parts.append(f"{len(result['injections'])} injections")
+        severity = "high" if result["max_risk_score"] >= 7 else "medium" if result["max_risk_score"] >= 4 else "low"
+        _security_events.insert(0, {
+            "ts": now_ts,
+            "type": "test",
+            "severity": severity,
+            "summary": f"[TEST] {', '.join(summary_parts)}",
+            "event_id": entry["id"],
+        })
+        if len(_security_events) > 100:
+            _security_events.pop()
+
     return entry
 
 
 def _run_scan(text: str, agent_id: str | None = None) -> dict:
     from claw_vault.detector.engine import DetectionEngine
+    from claw_vault.guard.rule_engine import RuleEngine
 
     engine = DetectionEngine()
     agent_config = get_agent_config(agent_id)
     result = engine.scan_full(text, detection_config=agent_config.get("detection"))
+
+    # Use the global rule engine (has custom rules loaded) if available,
+    # otherwise fall back to a fresh instance
+    re = _rule_engine if _rule_engine else RuleEngine()
+    action_result = re.evaluate(
+        result,
+        guard_mode=agent_config.get("guard_mode"),
+        auto_sanitize=agent_config.get("auto_sanitize"),
+    )
 
     return {
         "has_threats": result.has_threats,
         "threat_level": result.threat_level.value,
         "max_risk_score": result.max_risk_score,
         "total_detections": result.total_detections,
+        "action": action_result.action.value,
+        "reason": action_result.reason,
         "sensitive": [
             {
                 "type": s.pattern_type,
@@ -543,13 +643,14 @@ async def update_detection_config(config: dict[str, bool]):
             _global_detection_config[key] = config[key]
             if _settings and hasattr(_settings.detection, key):
                 setattr(_settings.detection, key, config[key])
+    _clear_active_preset()
     _persist_config()
     return _global_detection_config
 
 
 @router.get("/config/rules")
 async def get_rules():
-    """Get current custom rule list from rules.yaml as YAML string."""
+    """Get current custom rule list as YAML string."""
     import yaml
 
     rules_dicts = export_rules(_rules)
@@ -560,7 +661,7 @@ async def get_rules():
 
 @router.post("/config/rules")
 async def replace_rules(payload: RulesPayload):
-    """Replace custom rules and persist them to rules.yaml.
+    """Replace custom rules and persist to unified config.yaml.
 
     The frontend sends a JSON array of rule dictionaries. We validate
     each entry via RuleConfig and update the in-memory rule engine.
@@ -577,7 +678,8 @@ async def replace_rules(payload: RulesPayload):
             structlog.get_logger().warning("dashboard.rules.invalid", error=str(exc), raw=raw)
 
     _rules = new_rules
-    save_rules(_rules)
+    _clear_active_preset()
+    _persist_config()
     if _rule_engine and hasattr(_rule_engine, "set_rules"):
         _rule_engine.set_rules(_rules)
 
@@ -607,6 +709,10 @@ async def update_guard_config(config: dict):
             _rule_engine._mode = config["mode"]
         if "auto_sanitize" in config:
             _rule_engine._auto_sanitize = config["auto_sanitize"]
+    # Update file monitor guard mode so threat response matches
+    if _file_monitor_service and "mode" in config:
+        _file_monitor_service.set_guard_mode(config["mode"])
+    _clear_active_preset()
     _persist_config()
     return await get_guard_config()
 
@@ -656,7 +762,90 @@ async def update_openclaw_session_redaction_config(payload: OpenClawSessionRedac
     return await get_openclaw_session_redaction_config()
 
 
-def push_proxy_event(record, scan=None) -> None:
+def _parse_request_metadata(request_body: str | None) -> tuple[list[dict], int]:
+    """Extract tool calls and message count from the AI API request body."""
+    if not request_body:
+        return [], 0
+    try:
+        data = _json.loads(request_body)
+    except (ValueError, TypeError):
+        return [], 0
+    if not isinstance(data, dict):
+        return [], 0
+
+    tool_calls = []
+    messages = data.get("messages", [])
+    if not isinstance(messages, list):
+        messages = []
+
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role", "")
+
+        if role == "assistant":
+            tc_list = msg.get("tool_calls", [])
+            if isinstance(tc_list, list):
+                for tc in tc_list:
+                    if not isinstance(tc, dict):
+                        continue
+                    fn = tc.get("function", {})
+                    name = fn.get("name", tc.get("name", "unknown"))
+                    params_raw = fn.get("arguments", "{}")
+                    try:
+                        params = _json.loads(params_raw) if isinstance(params_raw, str) else params_raw
+                    except (ValueError, TypeError):
+                        params = params_raw
+                    tool_calls.append({
+                        "name": name,
+                        "parameters": params,
+                        "sensitive": name.lower() in _SENSITIVE_TOOLS,
+                    })
+
+        content = msg.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    name = block.get("name", "unknown")
+                    tool_calls.append({
+                        "name": name,
+                        "parameters": block.get("input", {}),
+                        "sensitive": name.lower() in _SENSITIVE_TOOLS,
+                    })
+
+    return tool_calls, len(messages)
+
+
+def _update_trend_data(record, tool_call_count: int) -> None:
+    """Append data points to token and tool call trend ring buffers."""
+    import datetime as _dt
+
+    now = _dt.datetime.utcnow()
+    # Bin to 5-minute intervals
+    bin_minute = (now.minute // 5) * 5
+    bin_ts = now.replace(minute=bin_minute, second=0, microsecond=0).isoformat() + "Z"
+
+    # Token trend: aggregate into existing bin or create new
+    token_input = record.token_count if hasattr(record, "token_count") else 0
+    if _token_trend and _token_trend[-1]["ts"] == bin_ts:
+        _token_trend[-1]["input"] += token_input
+        _token_trend[-1]["output"] += 0
+        _token_trend[-1]["total"] += token_input
+    else:
+        _token_trend.append({"ts": bin_ts, "input": token_input, "output": 0, "total": token_input})
+        if len(_token_trend) > 288:
+            _token_trend.pop(0)
+
+    # Tool call trend
+    if _tool_call_trend and _tool_call_trend[-1]["ts"] == bin_ts:
+        _tool_call_trend[-1]["count"] += tool_call_count
+    else:
+        _tool_call_trend.append({"ts": bin_ts, "count": tool_call_count})
+        if len(_tool_call_trend) > 288:
+            _tool_call_trend.pop(0)
+
+
+def push_proxy_event(record, scan=None, request_body=None) -> None:
     """Push a proxy interception audit record into the dashboard scan history.
 
     Called from the audit callback in cli.py so proxy events appear on the
@@ -665,6 +854,7 @@ def push_proxy_event(record, scan=None) -> None:
     Args:
         record: AuditRecord from the proxy interceptor.
         scan: Optional ScanResult with full detection details (masked values etc.).
+        request_body: Optional raw request body for tool call extraction.
     """
     import datetime as _dt
 
@@ -732,6 +922,9 @@ def push_proxy_event(record, scan=None) -> None:
     if record.agent_id and record.agent_id in _agents:
         resolved_agent_name = _agents[record.agent_id].get("name", resolved_agent_name)
 
+    tool_calls, message_count = _parse_request_metadata(request_body)
+    tool_call_count = len(tool_calls)
+
     # Build input preview: show user message content (truncated) if available
     if record.user_content:
         preview = record.user_content[:200]
@@ -742,11 +935,15 @@ def push_proxy_event(record, scan=None) -> None:
     else:
         preview = "proxy request"
 
+    now_ts = (
+        record.timestamp.isoformat() + "Z"
+        if hasattr(record.timestamp, "isoformat")
+        else _dt.datetime.utcnow().isoformat() + "Z"
+    )
+
     entry = {
         "id": str(uuid.uuid4()),
-        "timestamp": record.timestamp.isoformat() + "Z"
-        if hasattr(record.timestamp, "isoformat")
-        else _dt.datetime.utcnow().isoformat() + "Z",
+        "timestamp": now_ts,
         "source": "proxy",
         "agent_id": record.agent_id,
         "agent_name": resolved_agent_name,
@@ -760,10 +957,50 @@ def push_proxy_event(record, scan=None) -> None:
         "sensitive": sensitive,
         "commands": commands,
         "injections": injections,
+        "tool_calls": tool_calls,
+        "tool_call_count": tool_call_count,
+        "message_count": message_count,
     }
     _scan_history.insert(0, entry)
     if len(_scan_history) > 500:
         _scan_history.pop()
+
+    # Update trend data
+    _update_trend_data(record, tool_call_count)
+
+    # Add to analysis log
+    action_label = (record.action_taken or "allow").upper()
+    agent_label = resolved_agent_name or "unknown"
+    log_msg = f"[{action_label}] {agent_label}: {preview[:80]}"
+    if tool_call_count:
+        log_msg += f" ({tool_call_count} tool calls)"
+    _analysis_log.insert(0, {
+        "ts": now_ts,
+        "level": "warn" if has_threats else "info",
+        "message": log_msg,
+    })
+    if len(_analysis_log) > 200:
+        _analysis_log.pop()
+
+    # Add security events for threats
+    if has_threats:
+        severity = "high" if record.risk_score >= 7 else "medium" if record.risk_score >= 4 else "low"
+        summary_parts = []
+        if sensitive:
+            summary_parts.append(f"{len(sensitive)} sensitive data")
+        if commands:
+            summary_parts.append(f"{len(commands)} dangerous commands")
+        if injections:
+            summary_parts.append(f"{len(injections)} injections")
+        _security_events.insert(0, {
+            "ts": now_ts,
+            "type": record.action_taken or "allow",
+            "severity": severity,
+            "summary": f"[{action_label}] {', '.join(summary_parts)} - {agent_label}",
+            "event_id": entry["id"],
+        })
+        if len(_security_events) > 100:
+            _security_events.pop()
 
 
 def _sync_openclaw_agents() -> int:
@@ -801,40 +1038,519 @@ def _sync_openclaw_agents() -> int:
 
 
 def _persist_config():
-    """Write current settings back to config.yaml."""
+    """Write current settings (including rules and agents) to unified config.yaml."""
     if not _settings:
         return
-    import yaml
+    from claw_vault.config import save_settings
 
-    from claw_vault.config import DEFAULT_CONFIG_FILE
-
-    # Ensure custom_patterns is always a list of strings
+    # Sync in-memory detection config back into settings
     custom_patterns = _settings.detection.custom_patterns
     if not isinstance(custom_patterns, list):
-        custom_patterns = []
+        _settings.detection.custom_patterns = []
     else:
-        # Filter out any non-string items
-        custom_patterns = [str(p) for p in custom_patterns if isinstance(p, str)]
+        _settings.detection.custom_patterns = [
+            str(p) for p in custom_patterns if isinstance(p, str)
+        ]
 
-    detection = {"enabled": _settings.detection.enabled, **_global_detection_config}
-    detection["custom_patterns"] = custom_patterns
+    for key, value in _global_detection_config.items():
+        if hasattr(_settings.detection, key):
+            setattr(_settings.detection, key, value)
 
-    data = {
-        "proxy": _settings.proxy.model_dump(mode="json"),
-        "detection": detection,
-        "guard": _settings.guard.model_dump(mode="json"),
-        "monitor": _settings.monitor.model_dump(mode="json"),
-        "audit": _settings.audit.model_dump(mode="json"),
-        "dashboard": _settings.dashboard.model_dump(mode="json"),
-        "cloud": _settings.cloud.model_dump(mode="json"),
-        "openclaw": _settings.openclaw.model_dump(mode="json"),
+    # Sync rules and agents into settings
+    _settings.rules = [r.model_dump(exclude_none=True) for r in _rules]
+    _settings.agents.entries = dict(_agents)
+
+    save_settings(_settings)
+
+
+# --------------- Monitor Endpoints ---------------
+
+
+@router.get("/monitor/overview")
+async def get_monitor_overview():
+    """Get aggregated monitoring stats for the protection center dashboard."""
+    history = _scan_history
+    all_events = history
+    warnings = sum(1 for e in all_events if e.get("action") == "ask_user")
+    blocks = sum(1 for e in all_events if e.get("action") == "block")
+    allows = sum(1 for e in all_events if e.get("action") == "allow")
+    sanitized = sum(1 for e in all_events if e.get("action") == "sanitize")
+    risk_count = sum(1 for e in all_events if e.get("has_threats"))
+    tool_calls = sum(e.get("tool_call_count", 0) for e in all_events)
+    message_count = sum(e.get("message_count", 0) for e in all_events)
+
+    token_data = {"total": 0, "input": 0, "output": 0}
+    if _token_counter:
+        today = _token_counter.get_today_usage()
+        token_data = {
+            "total": today.total_tokens,
+            "input": today.input_tokens,
+            "output": today.output_tokens,
+        }
+
+    proxy_port = _settings.proxy.port if _settings else 8765
+
+    return {
+        "scan_count": len(all_events),
+        "message_count": message_count,
+        "warning_count": warnings,
+        "block_count": blocks,
+        "allow_count": allows,
+        "sanitize_count": sanitized,
+        "risk_count": risk_count,
+        "token_total": token_data["total"],
+        "token_input": token_data["input"],
+        "token_output": token_data["output"],
+        "tool_call_count": tool_calls,
+        "proxy_port": proxy_port,
     }
+
+
+@router.get("/monitor/trends")
+async def get_monitor_trends():
+    """Get time-series data for token and tool call trend charts."""
+    return {
+        "token_trend": _token_trend[-60:],
+        "tool_call_trend": _tool_call_trend[-60:],
+    }
+
+
+@router.get("/monitor/log-stream")
+async def get_monitor_log_stream(limit: int = Query(default=50, le=200)):
+    """Get recent analysis log lines for the real-time log panel."""
+    return _analysis_log[:limit]
+
+
+@router.get("/monitor/security-events")
+async def get_monitor_security_events(limit: int = Query(default=50, le=200)):
+    """Get security event timeline."""
+    return _security_events[:limit]
+
+
+# --------------- File Monitor Endpoints ---------------
+
+
+def push_file_monitor_event(event) -> None:
+    """Push a file change event into the dashboard data stores.
+
+    Called from the file monitor event callback wired in cli.py.
+    """
+    import datetime as _dt
+
+    ev_dict = {
+        "id": event.id,
+        "timestamp": event.timestamp.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z" if hasattr(event.timestamp, "strftime") else _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+        "change_type": event.change_type.value if hasattr(event.change_type, "value") else str(event.change_type),
+        "file_path": event.file_path,
+        "file_name": event.file_name,
+        "matched_pattern": event.matched_pattern,
+        "is_managed": event.is_managed,
+        "file_size_bytes": event.file_size_bytes,
+        "has_threats": event.has_threats,
+        "threat_level": event.threat_level,
+        "risk_score": event.risk_score,
+        "sensitive_count": event.sensitive_count,
+        "detection_summary": event.detection_summary,
+        "action_taken": getattr(event, "action_taken", "allow"),
+        "needs_user_action": getattr(event, "needs_user_action", False),
+    }
+    _file_monitor_events.insert(0, ev_dict)
+    if len(_file_monitor_events) > 200:
+        _file_monitor_events.pop()
+
+    action = ev_dict["action_taken"]
+
+    # Create alert for threat events or deletions of managed files
+    if event.has_threats or (event.change_type.value == "deleted" and event.is_managed):
+        # Guard-mode-aware severity
+        if action == "block":
+            severity = "critical"
+        elif action == "ask_user":
+            severity = "high"
+        else:
+            severity = "critical" if event.risk_score >= 9 else "high" if event.risk_score >= 7 else "medium" if event.risk_score >= 4 else "low"
+        if event.change_type.value == "deleted" and event.is_managed:
+            severity = max(severity, "high", key=lambda s: ["low", "medium", "high", "critical"].index(s))
+
+        action_label = {"block": "BLOCKED", "ask_user": "REVIEW", "log": "LOGGED"}.get(action, "")
+        summary_parts = [event.change_type.value.upper(), event.file_name]
+        if action_label:
+            summary_parts.insert(0, f"[{action_label}]")
+        if event.detection_summary:
+            summary_parts.append(f"({len(event.detection_summary)} detections)")
+        alert = {
+            "id": str(uuid.uuid4()),
+            "timestamp": ev_dict["timestamp"],
+            "severity": severity,
+            "summary": " ".join(summary_parts),
+            "event_id": event.id,
+            "file_path": event.file_path,
+            "change_type": ev_dict["change_type"],
+            "action_taken": action,
+            "needs_user_action": ev_dict["needs_user_action"],
+        }
+        _file_monitor_alerts.insert(0, alert)
+        if len(_file_monitor_alerts) > 100:
+            _file_monitor_alerts.pop()
+
+    # Also push to unified analysis log and security events
+    now_ts = ev_dict["timestamp"]
+    change_label = ev_dict["change_type"].upper()
+    action_tag = {"block": " BLOCKED", "ask_user": " REVIEW", "log": ""}.get(action, "")
+    log_msg = f"[FILE {change_label}{action_tag}] {event.file_name}"
+    if event.matched_pattern:
+        log_msg += f" (pattern: {event.matched_pattern})"
+    if event.has_threats:
+        log_msg += f" - {event.sensitive_count} threats detected"
+    _analysis_log.insert(0, {
+        "ts": now_ts,
+        "level": "warn" if event.has_threats else "info",
+        "message": log_msg,
+    })
+    if len(_analysis_log) > 200:
+        _analysis_log.pop()
+
+    if event.has_threats:
+        severity = "high" if event.risk_score >= 7 else "medium" if event.risk_score >= 4 else "low"
+        _security_events.insert(0, {
+            "ts": now_ts,
+            "type": "file_monitor",
+            "severity": severity,
+            "summary": f"[FILE] Sensitive data in {event.file_name} ({', '.join(event.detection_summary[:3])})",
+            "event_id": event.id,
+        })
+        if len(_security_events) > 100:
+            _security_events.pop()
+
+    # Push to unified scan history so file events appear in the Events tab
+    input_preview = f"[{ev_dict['change_type'].upper()}] {event.file_name}"
+    if event.matched_pattern:
+        input_preview += f" (pattern: {event.matched_pattern})"
+    scan_entry = {
+        "id": ev_dict["id"],
+        "timestamp": ev_dict["timestamp"],
+        "source": "file",
+        "agent_id": None,
+        "agent_name": None,
+        "session_id": None,
+        "input_preview": input_preview,
+        "action": ev_dict["action_taken"] if event.has_threats else "log",
+        "has_threats": event.has_threats,
+        "threat_level": ev_dict["threat_level"],
+        "max_risk_score": event.risk_score,
+        "total_detections": event.sensitive_count,
+        "sensitive": [
+            {"type": d, "description": d, "masked": "", "risk": event.risk_score}
+            for d in (event.detection_summary or [])
+        ],
+        "commands": [],
+        "injections": [],
+        "tool_calls": [],
+        "tool_call_count": 0,
+        "message_count": 0,
+    }
+    _scan_history.insert(0, scan_entry)
+    if len(_scan_history) > 500:
+        _scan_history.pop()
+
+
+# --------------- Proxy Pause/Resume ---------------
+
+
+@router.get("/proxy/pause-status")
+async def get_proxy_pause_status():
+    """Check if the proxy is currently paused."""
+    if _proxy_server:
+        info = _proxy_server.pause_info
+        return info or {"paused": False}
+    return {"paused": False}
+
+
+@router.post("/proxy/resume")
+async def resume_proxy():
+    """Resume proxy with acknowledge — same files won't re-trigger until modified."""
+    if _proxy_server and _proxy_server.is_paused:
+        if _file_monitor_service:
+            _file_monitor_service.acknowledge_all()
+        _proxy_server.resume()
+        return {"resumed": True}
+    return {"resumed": False, "reason": "Proxy is not paused"}
+
+
+@router.post("/proxy/resume-enforce")
+async def resume_proxy_enforce():
+    """Resume proxy without acknowledge — same files will re-trigger enforcement."""
+    if _proxy_server and _proxy_server.is_paused:
+        _proxy_server.resume()
+        return {"resumed": True}
+    return {"resumed": False, "reason": "Proxy is not paused"}
+
+
+@router.post("/proxy/resume-exempt")
+async def resume_proxy_exempt():
+    """Resume proxy with permanent exemption — flagged files never re-trigger."""
+    if _proxy_server and _proxy_server.is_paused:
+        if _file_monitor_service:
+            _file_monitor_service.exempt_all()
+        _proxy_server.resume()
+        return {"resumed": True}
+    return {"resumed": False, "reason": "Proxy is not paused"}
+
+
+@router.post("/proxy/clear-exemptions")
+async def clear_exemptions():
+    """Clear all file exemptions and acknowledgements, restoring full enforcement."""
+    if _file_monitor_service:
+        _file_monitor_service.clear_exemptions()
+        return {"cleared": True}
+    return {"cleared": False, "reason": "File monitor not available"}
+
+
+@router.get("/file-monitor/status")
+async def get_file_monitor_status():
+    """Get file monitor service status."""
+    if _file_monitor_service:
+        return {
+            "enabled": _file_monitor_service.enabled,
+            "running": _file_monitor_service.running,
+            "watch_roots": [str(r) for r in _file_monitor_service.watch_roots],
+            "last_watch_error": _file_monitor_service.last_watch_error,
+            "event_count": len(_file_monitor_events),
+            "alert_count": len(_file_monitor_alerts),
+        }
+    return {
+        "enabled": False,
+        "running": False,
+        "watch_roots": [],
+        "last_watch_error": None,
+        "event_count": 0,
+        "alert_count": 0,
+    }
+
+
+@router.get("/file-monitor/events")
+async def get_file_monitor_events(limit: int = Query(default=50, le=200)):
+    """Get recent file change events."""
+    return _file_monitor_events[:limit]
+
+
+@router.get("/file-monitor/alerts")
+async def get_file_monitor_alerts(limit: int = Query(default=50, le=100)):
+    """Get recent file monitor alerts."""
+    return _file_monitor_alerts[:limit]
+
+
+# --------------- File Monitor Config ---------------
+
+
+@router.get("/config/file-monitor")
+async def get_file_monitor_config():
+    """Get current file monitor configuration and runtime status."""
+    if _settings:
+        config = _settings.file_monitor.model_dump(mode="json")
+    else:
+        config = {"enabled": True}
+
+    # Add runtime info
+    if _file_monitor_service:
+        config["running"] = _file_monitor_service.running
+        config["watch_roots"] = [str(r) for r in _file_monitor_service.watch_roots]
+        config["guard_mode"] = _file_monitor_service.guard_mode
+    else:
+        config["running"] = False
+        config["watch_roots"] = []
+        config["guard_mode"] = _settings.guard.mode if _settings else "permissive"
+
+    return config
+
+
+@router.post("/config/file-monitor")
+async def update_file_monitor_config(payload: FileMonitorConfigUpdate):
+    """Update file monitor configuration, hot-patch service, and persist."""
+    if not _settings:
+        return {"error": "Settings not initialized"}
+
+    update_kwargs = payload.model_dump(exclude_none=True)
+    if not update_kwargs:
+        return await get_file_monitor_config()
+
+    if _file_monitor_service:
+        if "enabled" in update_kwargs:
+            _file_monitor_service.set_enabled(update_kwargs.pop("enabled"))
+        if update_kwargs:
+            _file_monitor_service.update_config(**update_kwargs)
+    else:
+        for field, value in update_kwargs.items():
+            setattr(_settings.file_monitor, field, value)
+
+    _clear_active_preset()
+    _persist_config()
+    return await get_file_monitor_config()
+
+
+# --------------- Local Scan Endpoints ---------------
+
+
+def push_local_scan_event(result) -> None:
+    """Push a local scan result into the unified scan history.
+
+    Called from the scan scheduler event callback wired in cli.py.
+    """
+    findings_summary = []
+    for f in (result.findings or [])[:10]:
+        findings_summary.append({
+            "file": f.file_path,
+            "type": f.finding_type,
+            "description": f.description,
+            "risk": f.risk_score,
+        })
+
+    scan_entry = {
+        "id": result.id,
+        "timestamp": result.timestamp,
+        "source": "local_scan",
+        "input_preview": f"[{result.scan_type.value.upper()}] {result.path} ({result.files_scanned} files)",
+        "has_threats": result.max_risk_score > 0,
+        "threat_level": result.threat_level,
+        "max_risk_score": result.max_risk_score,
+        "total_detections": len(result.findings),
+        "action": "block" if result.threat_level in ("high", "critical") else "log",
+        "reason": f"Local {result.scan_type.value} scan: {len(result.findings)} findings",
+        "sensitive": findings_summary,
+        "commands": [],
+        "injections": [],
+        "tool_calls": [],
+        "scan_type": result.scan_type.value,
+        "duration": result.duration_seconds,
+    }
+    _scan_history.insert(0, scan_entry)
+    if len(_scan_history) > 500:
+        _scan_history.pop()
+
+
+class LocalScanRunRequest(BaseModel):
+    scan_type: str = "credential"
+    path: str | None = None
+    max_files: int | None = None
+
+
+class LocalScanScheduleRequest(BaseModel):
+    cron: str
+    scan_type: str = "credential"
+    path: str = ""
+    max_files: int = 100
+
+
+@router.get("/local-scan/status")
+async def get_local_scan_status():
+    """Get local scan scheduler status."""
+    if _local_scan_scheduler:
+        return {
+            "enabled": _settings.local_scan.enabled if _settings else True,
+            "running": _local_scan_scheduler.running,
+            "schedule_count": len(_local_scan_scheduler.list_schedules()),
+            "history_count": len(_local_scan_scheduler.get_history(limit=1000)),
+        }
+    return {"enabled": False, "running": False, "schedule_count": 0, "history_count": 0}
+
+
+@router.post("/local-scan/run")
+async def run_local_scan(payload: LocalScanRunRequest):
+    """Trigger an on-demand local scan."""
+    if not _local_scan_scheduler:
+        return {"error": "Local scan scheduler not initialized"}
+
+    from claw_vault.local_scan.models import ScanType
+
     try:
-        DEFAULT_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(DEFAULT_CONFIG_FILE, "w", encoding="utf-8") as f:
-            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-    except Exception:
-        pass
+        scan_type = ScanType(payload.scan_type)
+    except ValueError:
+        return {"error": f"Invalid scan type: {payload.scan_type}"}
+
+    path = payload.path or (
+        _settings.local_scan.default_scan_paths[0]
+        if _settings and _settings.local_scan.default_scan_paths
+        else str(Path.home())
+    )
+
+    result = _local_scan_scheduler.run_now(scan_type, path, payload.max_files)
+    return result.model_dump(mode="json")
+
+
+@router.get("/local-scan/history")
+async def get_local_scan_history(limit: int = Query(default=50, le=200)):
+    """Get recent local scan results."""
+    if _local_scan_scheduler:
+        return [r.model_dump(mode="json") for r in _local_scan_scheduler.get_history(limit)]
+    return []
+
+
+@router.get("/local-scan/schedules")
+async def get_local_scan_schedules():
+    """List all cron scan schedules."""
+    if _local_scan_scheduler:
+        return [s.model_dump(mode="json") for s in _local_scan_scheduler.list_schedules()]
+    return []
+
+
+@router.post("/local-scan/schedules")
+async def add_local_scan_schedule(payload: LocalScanScheduleRequest):
+    """Add a cron scan schedule."""
+    if not _local_scan_scheduler:
+        return {"error": "Local scan scheduler not initialized"}
+
+    from claw_vault.local_scan.models import ScanSchedule
+
+    schedule = ScanSchedule(
+        cron=payload.cron,
+        scan_type=payload.scan_type,
+        path=payload.path,
+        max_files=payload.max_files,
+    )
+    try:
+        _local_scan_scheduler.add_schedule(schedule)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    _persist_config()
+    return schedule.model_dump(mode="json")
+
+
+@router.delete("/local-scan/schedules/{schedule_id}")
+async def remove_local_scan_schedule(schedule_id: str):
+    """Remove a cron scan schedule."""
+    if not _local_scan_scheduler:
+        return {"error": "Local scan scheduler not initialized"}
+
+    removed = _local_scan_scheduler.remove_schedule(schedule_id)
+    if not removed:
+        return {"error": f"Schedule '{schedule_id}' not found"}
+
+    _persist_config()
+    return {"removed": schedule_id}
+
+
+@router.get("/config/local-scan")
+async def get_local_scan_config():
+    """Get current local scan configuration."""
+    if _settings:
+        config = _settings.local_scan.model_dump(mode="json")
+        if _local_scan_scheduler:
+            config["running"] = _local_scan_scheduler.running
+        return config
+    return {}
+
+
+@router.post("/config/local-scan")
+async def update_local_scan_config(payload: dict):
+    """Update local scan configuration."""
+    if not _settings:
+        return {}
+    for key, value in payload.items():
+        if hasattr(_settings.local_scan, key):
+            setattr(_settings.local_scan, key, value)
+    _persist_config()
+    return await get_local_scan_config()
 
 
 # --------------- Agent Management ---------------
@@ -872,6 +1588,7 @@ async def create_or_update_agent(agent: AgentConfig):
         "detection": agent.detection,
         "stats": _agents.get(agent_id, {}).get("stats", {"scans": 0, "threats": 0, "blocked": 0}),
     }
+    _persist_config()
     return _agents[agent_id]
 
 
@@ -880,6 +1597,7 @@ async def delete_agent(agent_id: str):
     """Delete an agent."""
     if agent_id in _agents:
         del _agents[agent_id]
+        _persist_config()
         return {"deleted": True}
     return {"deleted": False, "error": "Agent not found"}
 
@@ -1215,3 +1933,178 @@ async def explain_rule(rule_dict: dict):
 
     except Exception as exc:
         return {"explanation": f"Error: {exc}"}
+
+
+# ===================== Vaults API =====================
+
+
+@router.get("/vaults/presets")
+async def list_presets():
+    """List all vault presets."""
+    if not _settings:
+        return {"presets": []}
+    return {"presets": [p.model_dump() for p in _settings.vaults.presets]}
+
+
+@router.post("/vaults/presets")
+async def create_preset(preset: dict):
+    """Create custom preset from current configuration."""
+    if not _settings:
+        return {"success": False, "error": "Settings not initialized"}
+
+    from claw_vault.config import VaultPreset, save_settings
+
+    new_preset = VaultPreset(
+        id=preset.get("id", str(uuid.uuid4())),
+        name=preset["name"],
+        description=preset.get("description", ""),
+        icon=preset.get("icon", "🔒"),
+        builtin=False,
+        created_at=preset.get("created_at", ""),
+        detection=_settings.detection.model_dump(),
+        guard=_settings.guard.model_dump(),
+        file_monitor=_settings.file_monitor.model_dump(),
+        rules=_settings.rules,
+    )
+    _settings.vaults.presets.append(new_preset)
+    save_settings(_settings)
+    return {"success": True, "preset": new_preset.model_dump()}
+
+
+@router.put("/vaults/presets/{preset_id}")
+async def update_preset(preset_id: str, preset: dict):
+    """Update custom preset (builtin presets cannot be modified)."""
+    if not _settings:
+        return {"success": False, "error": "Settings not initialized"}
+
+    from claw_vault.config import save_settings
+
+    idx = next((i for i, p in enumerate(_settings.vaults.presets) if p.id == preset_id), None)
+    if idx is None:
+        return {"success": False, "error": "Preset not found"}
+    if _settings.vaults.presets[idx].builtin:
+        return {"success": False, "error": "Cannot modify builtin preset"}
+
+    # Update fields
+    _settings.vaults.presets[idx].name = preset.get("name", _settings.vaults.presets[idx].name)
+    _settings.vaults.presets[idx].description = preset.get(
+        "description", _settings.vaults.presets[idx].description
+    )
+    _settings.vaults.presets[idx].icon = preset.get("icon", _settings.vaults.presets[idx].icon)
+    _settings.vaults.presets[idx].detection = preset.get(
+        "detection", _settings.vaults.presets[idx].detection
+    )
+    _settings.vaults.presets[idx].guard = preset.get("guard", _settings.vaults.presets[idx].guard)
+    _settings.vaults.presets[idx].file_monitor = preset.get(
+        "file_monitor", _settings.vaults.presets[idx].file_monitor
+    )
+    _settings.vaults.presets[idx].rules = preset.get("rules", _settings.vaults.presets[idx].rules)
+
+    save_settings(_settings)
+    return {"success": True}
+
+
+@router.post("/vaults/presets/{preset_id}/apply")
+async def apply_preset(preset_id: str):
+    """Apply preset to current configuration (overwrite config.yaml main config)."""
+    if not _settings:
+        return {"success": False, "error": "Settings not initialized"}
+
+    from claw_vault.config import DetectionConfig, FileMonitorConfig, GuardConfig, save_settings
+
+    preset = next((p for p in _settings.vaults.presets if p.id == preset_id), None)
+    if not preset:
+        return {"success": False, "error": "Preset not found"}
+
+    # Overwrite main config
+    _settings.detection = DetectionConfig(**preset.detection)
+    _settings.guard = GuardConfig(**preset.guard)
+    _settings.file_monitor = FileMonitorConfig(**preset.file_monitor)
+    _settings.rules = preset.rules
+
+    # Sync detection config to in-memory global used by web scans
+    det = _settings.detection
+    _global_detection_config["api_keys"] = det.api_keys
+    _global_detection_config["aws_credentials"] = det.aws_credentials
+    _global_detection_config["blockchain"] = det.blockchain
+    _global_detection_config["passwords"] = det.passwords
+    _global_detection_config["private_ips"] = det.private_ips
+    _global_detection_config["pii"] = det.pii
+    _global_detection_config["jwt_tokens"] = det.jwt_tokens
+    _global_detection_config["ssh_keys"] = det.ssh_keys
+    _global_detection_config["credit_cards"] = det.credit_cards
+    _global_detection_config["emails"] = det.emails
+    _global_detection_config["generic_secrets"] = det.generic_secrets
+    _global_detection_config["dangerous_commands"] = det.dangerous_commands
+    _global_detection_config["prompt_injection"] = det.prompt_injection
+
+    # Sync to runtime components
+    if _rule_engine:
+        _rule_engine._mode = _settings.guard.mode
+        _rule_engine._auto_sanitize = _settings.guard.auto_sanitize
+        # Reload rules
+        global _rules
+        _rules = load_rules(raw_rules=_settings.rules)
+        if hasattr(_rule_engine, "set_rules"):
+            _rule_engine.set_rules(_rules)
+
+    # Sync file monitor config
+    if _file_monitor_service:
+        fm_dict = _settings.file_monitor.model_dump()
+        was_enabled = _file_monitor_service.enabled
+        _file_monitor_service.set_enabled(fm_dict.pop("enabled"))
+        _file_monitor_service.update_config(**fm_dict)
+        _file_monitor_service.set_guard_mode(_settings.guard.mode)
+        # Start/stop based on new enabled state
+        if _settings.file_monitor.enabled and not _file_monitor_service.running:
+            _file_monitor_service.start()
+        elif not _settings.file_monitor.enabled and _file_monitor_service.running:
+            _file_monitor_service.stop()
+
+    # Persist to config.yaml
+    _settings.vaults.active_preset_id = preset_id
+    save_settings(_settings)
+
+    global _active_preset_id
+    _active_preset_id = preset_id
+
+    return {"success": True, "message": f"Applied preset: {preset.name}", "active_preset_id": preset_id}
+
+
+@router.delete("/vaults/presets/{preset_id}")
+async def delete_preset(preset_id: str):
+    """Delete custom preset (builtin presets cannot be deleted)."""
+    if not _settings:
+        return {"success": False, "error": "Settings not initialized"}
+
+    from claw_vault.config import save_settings
+
+    preset = next((p for p in _settings.vaults.presets if p.id == preset_id), None)
+    if not preset:
+        return {"success": False, "error": "Preset not found"}
+    if preset.builtin:
+        return {"success": False, "error": "Cannot delete builtin preset"}
+
+    _settings.vaults.presets = [p for p in _settings.vaults.presets if p.id != preset_id]
+    if _settings.vaults.active_preset_id == preset_id:
+        _settings.vaults.active_preset_id = None
+        global _active_preset_id
+        _active_preset_id = None
+    save_settings(_settings)
+    return {"success": True}
+
+
+@router.get("/vaults/active")
+async def get_active_vault():
+    """Return the currently active vault preset ID."""
+    active = _active_preset_id
+    # Fallback: infer active preset by matching current config against presets
+    if active is None and _settings:
+        current_guard = _settings.guard.model_dump(mode="json")
+        current_detection = _settings.detection.model_dump(mode="json")
+        for preset in _settings.vaults.presets:
+            if preset.guard == current_guard and preset.detection == current_detection:
+                active = preset.id
+                break
+    return {"active_preset_id": active}
+

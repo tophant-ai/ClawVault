@@ -77,11 +77,13 @@ class TestSanitizeRestoreRoundtrip:
         detections = sensitive_detector.detect(original)
         sanitized = sanitizer.sanitize(original, detections)
 
-        # Simulate AI response that includes placeholders
-        ai_response = f"The issue is with your credentials: check {sanitized.split('password=')[1].split(' ')[0]} validity"
+        # Verify sanitization produced placeholders
+        assert sanitizer.mapping, "Sanitizer should have created placeholder mappings"
+
+        # Simulate AI response that includes a placeholder from the mapping
+        placeholder = next(iter(sanitizer.mapping))
+        ai_response = f"The issue is with your credentials: check {placeholder} validity"
         restored = restorer.restore(ai_response, sanitizer.mapping)
 
-        # Original values should be restored
-        for ph, val in sanitizer.mapping.items():
-            if ph in ai_response:
-                assert val in restored
+        # Original value should be restored
+        assert sanitizer.mapping[placeholder] in restored

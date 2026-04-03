@@ -23,6 +23,7 @@ echo "🛡️  Starting ClawVault"
 echo "========================"
 
 # 1. Start clawvault
+start_claw_vault() {
 if curl -s http://127.0.0.1:8766/api/health > /dev/null 2>&1; then
     echo "✓ ClawVault already running"
 else
@@ -45,6 +46,7 @@ else
         echo "❌ Failed to start. Check: tail -f $LOG"
         exit 1
     fi
+fi
 }
 
 inspect_redaction_status() {
@@ -133,7 +135,7 @@ fi
 if [ "$1" = "--with-openclaw" ]; then
     echo ""
     echo "🚀 Starting OpenClaw..."
-    export ALL_PROXY=socks5://127.0.0.1:1080
+    unset ALL_PROXY
     export HTTP_PROXY=http://127.0.0.1:8765
     export HTTPS_PROXY=http://127.0.0.1:8765
     export NO_PROXY=localhost,127.0.0.1

@@ -49,7 +49,7 @@ INJECTION_PATTERNS: list[tuple[str, str, float, str]] = [
     ),
     (
         "exfil_url",
-        r"(?:send|post|upload|transmit)\s+(?:to|data\s+to)\s+https?://",
+        r"(?:send|post|upload|transmit)\s+(?:[\w\s]{0,20}\s+)?(?:to|data\s+to)\s+https?://",
         9.0,
         "Attempts to send data to external URL",
     ),
