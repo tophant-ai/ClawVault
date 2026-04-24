@@ -147,25 +147,3 @@ class ProxyServer:
     def flag_file_content(self, file_path: str, scan: ScanResult) -> None:
         """Register sensitive values from a flagged file for proxy-level blocking."""
         self.addon.flag_file_content(file_path, scan)
-
-    def unflag_file(self, file_path: str) -> None:
-        """Remove a file from the flagged set."""
-        self.addon.unflag_file(file_path)
-
-    # ── Proxy Pause/Resume Pass-through ──
-
-    def pause(self, reason: str, event_id: str | None = None) -> None:
-        """Pause the proxy — all intercepted requests will be blocked."""
-        self.addon.pause(reason, event_id)
-
-    def resume(self) -> None:
-        """Resume normal proxy operation."""
-        self.addon.resume()
-
-    @property
-    def is_paused(self) -> bool:
-        return self.addon.is_paused
-
-    @property
-    def pause_info(self) -> dict[str, Any] | None:
-        return self.addon.pause_info

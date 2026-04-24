@@ -2,6 +2,8 @@
 # Stop ClawVault services and remove proxy from OpenClaw
 # Usage: ./scripts/stop.sh
 
+set -e
+
 SERVICE_FILE="$HOME/.config/systemd/user/openclaw-gateway.service"
 
 echo "🛑 Stopping ClawVault"

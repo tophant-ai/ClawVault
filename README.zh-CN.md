@@ -89,8 +89,8 @@ https://github.com/user-attachments/assets/d580cfa1-8410-4095-90cb-3d693413a24e
 - **🛡️ 提示词注入防御** — 拦截角色劫持、指令覆盖、数据窃取
 - **⚠️ 危险命令拦截** — 拦截 `rm -rf`、`curl|bash`、权限提升
 - **🔄 自动脱敏** — 将敏感信息替换为占位符，响应时自动还原
-- **💰 Token 预算控制** — 日/月限额与费用告警
 - **📊 实时仪表盘** — Web UI，支持 Agent 配置、检测详情、快速测试
+- **🗂️ 21 个内置保险箱预设** — 一键应用开发工作流、CI/CD、GDPR、HIPAA、加密钱包、备份归档等场景
 
 保险箱内置 **透明代理网关模块**，用于拦截 AI 工具与外部 API（OpenAI、Anthropic 等）之间的流量。
 
@@ -102,21 +102,21 @@ https://github.com/user-attachments/assets/1f424172-8833-4ccc-b0d2-abf67c1758dd
 
 ```bash
 # 从 ClawHub 安装
-openclaw skills install tophant-clawvault
+openclaw skills install tophant-clawvault-installer
 
 # 或使用 clawhub CLI 安装
-clawhub install tophant-clawvault
+clawhub install tophant-clawvault-installer
 ```
 
-**ClawHub 地址:** https://clawhub.ai/Martin2877/tophant-clawvault
+**ClawHub 地址:** https://clawhub.ai/Martin2877/tophant-clawvault-installer
 
 Skill 提供 AI 引导的安装和管理：
-- `/clawvault install --mode quick` - 快速安装
-- `/clawvault health` - 检查状态
-- `/clawvault generate-rule "拦截 AWS 凭证"` - 创建安全规则
-- `/clawvault test --category all` - 运行检测测试
+- `/tophant-clawvault-installer install --mode quick` - 快速安装
+- `/tophant-clawvault-installer health` - 检查状态
+- `/tophant-clawvault-installer generate-rule "拦截 AWS 凭证"` - 创建安全规则
+- `/tophant-clawvault-installer test --category all` - 运行检测测试
 
-详见 [skills/tophant-clawvault/](skills/tophant-clawvault/) 查看 Skill 文档。
+详见 [skills/tophant-clawvault-installer/](skills/tophant-clawvault-installer/) 查看 Skill 文档。
 
 ### 方式 2：作为 Python 包安装
 

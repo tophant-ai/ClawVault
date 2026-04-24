@@ -196,6 +196,75 @@ def _clear_active_preset() -> None:
             _settings.vaults.active_preset_id = None
 
 
+def _sync_active_preset_section(section_name: str) -> None:
+    """Sync a config section change into the active vault preset's snapshot.
+
+    Matches Web UI logic (saveCurrentVault):
+    - Builtin preset: create a custom copy "Name (Custom)" with updated snapshot
+    - Custom preset: update snapshot directly
+    """
+    global _active_preset_id
+
+    if not _settings or not _active_preset_id:
+        return
+    if section_name not in ("detection", "guard", "file_monitor", "rules"):
+        return
+
+    active_preset = next(
+        (p for p in _settings.vaults.presets if p.id == _active_preset_id), None
+    )
+    if not active_preset:
+        return
+
+    # Build full snapshot from current runtime config
+    snapshot = {
+        "detection": _settings.detection.model_dump(mode="json"),
+        "guard": _settings.guard.model_dump(mode="json"),
+        "file_monitor": _settings.file_monitor.model_dump(mode="json"),
+        "rules": list(_settings.rules),
+    }
+
+    if active_preset.builtin:
+        # Builtin presets are read-only templates — create or update a custom copy
+        copy_name = f"{active_preset.name} (Custom)"
+        existing_copy = next(
+            (p for p in _settings.vaults.presets
+             if p.name == copy_name and not p.builtin),
+            None,
+        )
+
+        from claw_vault.config import VaultPreset
+
+        if existing_copy:
+            # Update existing custom copy
+            existing_copy.detection = snapshot["detection"]
+            existing_copy.guard = snapshot["guard"]
+            existing_copy.file_monitor = snapshot["file_monitor"]
+            existing_copy.rules = snapshot["rules"]
+            _active_preset_id = existing_copy.id
+            _settings.vaults.active_preset_id = existing_copy.id
+        else:
+            # Create new custom copy
+            new_preset = VaultPreset(
+                id=str(uuid.uuid4()),
+                name=copy_name,
+                description=active_preset.description,
+                icon=active_preset.icon,
+                builtin=False,
+                created_at="",
+                **snapshot,
+            )
+            _settings.vaults.presets.append(new_preset)
+            _active_preset_id = new_preset.id
+            _settings.vaults.active_preset_id = new_preset.id
+    else:
+        # Custom preset — update snapshot directly
+        active_preset.detection = snapshot["detection"]
+        active_preset.guard = snapshot["guard"]
+        active_preset.file_monitor = snapshot["file_monitor"]
+        active_preset.rules = snapshot["rules"]
+
+
 # --------------- Pydantic models ---------------
 
 
@@ -292,11 +361,9 @@ async def health():
         file_monitor["enabled"] = _file_monitor_service.enabled
         file_monitor["running"] = _file_monitor_service.running
 
-    proxy = {"paused": False}
+    proxy = {}
     if _proxy_server:
-        proxy["paused"] = _proxy_server.is_paused
-        if _proxy_server.pause_info:
-            proxy.update(_proxy_server.pause_info)
+        proxy["running"] = True
 
     return {
         "status": "ok",
@@ -643,7 +710,7 @@ async def update_detection_config(config: dict[str, bool]):
             _global_detection_config[key] = config[key]
             if _settings and hasattr(_settings.detection, key):
                 setattr(_settings.detection, key, config[key])
-    _clear_active_preset()
+    _sync_active_preset_section("detection")
     _persist_config()
     return _global_detection_config
 
@@ -678,7 +745,7 @@ async def replace_rules(payload: RulesPayload):
             structlog.get_logger().warning("dashboard.rules.invalid", error=str(exc), raw=raw)
 
     _rules = new_rules
-    _clear_active_preset()
+    _sync_active_preset_section("rules")
     _persist_config()
     if _rule_engine and hasattr(_rule_engine, "set_rules"):
         _rule_engine.set_rules(_rules)
@@ -712,7 +779,7 @@ async def update_guard_config(config: dict):
     # Update file monitor guard mode so threat response matches
     if _file_monitor_service and "mode" in config:
         _file_monitor_service.set_guard_mode(config["mode"])
-    _clear_active_preset()
+    _sync_active_preset_section("guard")
     _persist_config()
     return await get_guard_config()
 
@@ -816,6 +883,10 @@ def _parse_request_metadata(request_body: str | None) -> tuple[list[dict], int]:
     return tool_calls, len(messages)
 
 
+# Snapshot of last-read token counter values for computing deltas
+_last_token_snapshot = {"input": 0, "output": 0}
+
+
 def _update_trend_data(record, tool_call_count: int) -> None:
     """Append data points to token and tool call trend ring buffers."""
     import datetime as _dt
@@ -825,14 +896,23 @@ def _update_trend_data(record, tool_call_count: int) -> None:
     bin_minute = (now.minute // 5) * 5
     bin_ts = now.replace(minute=bin_minute, second=0, microsecond=0).isoformat() + "Z"
 
-    # Token trend: aggregate into existing bin or create new
-    token_input = record.token_count if hasattr(record, "token_count") else 0
+    # Read actual token counts from TokenCounter (accumulated from response handler)
+    token_input = 0
+    token_output = 0
+    if _token_counter:
+        session = _token_counter.get_session_total()
+        token_input = session.input_tokens - _last_token_snapshot["input"]
+        token_output = session.output_tokens - _last_token_snapshot["output"]
+        _last_token_snapshot["input"] = session.input_tokens
+        _last_token_snapshot["output"] = session.output_tokens
+
+    token_total = token_input + token_output
     if _token_trend and _token_trend[-1]["ts"] == bin_ts:
         _token_trend[-1]["input"] += token_input
-        _token_trend[-1]["output"] += 0
-        _token_trend[-1]["total"] += token_input
+        _token_trend[-1]["output"] += token_output
+        _token_trend[-1]["total"] += token_total
     else:
-        _token_trend.append({"ts": bin_ts, "input": token_input, "output": 0, "total": token_input})
+        _token_trend.append({"ts": bin_ts, "input": token_input, "output": token_output, "total": token_total})
         if len(_token_trend) > 288:
             _token_trend.pop(0)
 
@@ -1253,59 +1333,6 @@ def push_file_monitor_event(event) -> None:
     if len(_scan_history) > 500:
         _scan_history.pop()
 
-
-# --------------- Proxy Pause/Resume ---------------
-
-
-@router.get("/proxy/pause-status")
-async def get_proxy_pause_status():
-    """Check if the proxy is currently paused."""
-    if _proxy_server:
-        info = _proxy_server.pause_info
-        return info or {"paused": False}
-    return {"paused": False}
-
-
-@router.post("/proxy/resume")
-async def resume_proxy():
-    """Resume proxy with acknowledge — same files won't re-trigger until modified."""
-    if _proxy_server and _proxy_server.is_paused:
-        if _file_monitor_service:
-            _file_monitor_service.acknowledge_all()
-        _proxy_server.resume()
-        return {"resumed": True}
-    return {"resumed": False, "reason": "Proxy is not paused"}
-
-
-@router.post("/proxy/resume-enforce")
-async def resume_proxy_enforce():
-    """Resume proxy without acknowledge — same files will re-trigger enforcement."""
-    if _proxy_server and _proxy_server.is_paused:
-        _proxy_server.resume()
-        return {"resumed": True}
-    return {"resumed": False, "reason": "Proxy is not paused"}
-
-
-@router.post("/proxy/resume-exempt")
-async def resume_proxy_exempt():
-    """Resume proxy with permanent exemption — flagged files never re-trigger."""
-    if _proxy_server and _proxy_server.is_paused:
-        if _file_monitor_service:
-            _file_monitor_service.exempt_all()
-        _proxy_server.resume()
-        return {"resumed": True}
-    return {"resumed": False, "reason": "Proxy is not paused"}
-
-
-@router.post("/proxy/clear-exemptions")
-async def clear_exemptions():
-    """Clear all file exemptions and acknowledgements, restoring full enforcement."""
-    if _file_monitor_service:
-        _file_monitor_service.clear_exemptions()
-        return {"cleared": True}
-    return {"cleared": False, "reason": "File monitor not available"}
-
-
 @router.get("/file-monitor/status")
 async def get_file_monitor_status():
     """Get file monitor service status."""
@@ -1383,7 +1410,7 @@ async def update_file_monitor_config(payload: FileMonitorConfigUpdate):
         for field, value in update_kwargs.items():
             setattr(_settings.file_monitor, field, value)
 
-    _clear_active_preset()
+    _sync_active_preset_section("file_monitor")
     _persist_config()
     return await get_file_monitor_config()
 
@@ -2017,9 +2044,16 @@ async def apply_preset(preset_id: str):
         return {"success": False, "error": "Preset not found"}
 
     # Overwrite main config
+    # NOTE: For detection and guard, replacing the object is safe because no
+    # long-lived service holds a reference to these config objects.
+    # For file_monitor, we MUST update in-place to preserve the reference held
+    # by _file_monitor_service._config — otherwise the service and settings
+    # diverge and subsequent updates go to the wrong object.
     _settings.detection = DetectionConfig(**preset.detection)
     _settings.guard = GuardConfig(**preset.guard)
-    _settings.file_monitor = FileMonitorConfig(**preset.file_monitor)
+    new_fm = FileMonitorConfig(**preset.file_monitor)
+    for field_name in new_fm.model_fields:
+        setattr(_settings.file_monitor, field_name, getattr(new_fm, field_name))
     _settings.rules = preset.rules
 
     # Sync detection config to in-memory global used by web scans

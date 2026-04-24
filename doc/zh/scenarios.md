@@ -182,6 +182,68 @@ ClawVault 检测结果：
 
 **价值：** 防止意外的 API 账单，并提供使用模式的可见性。
 
+## 保险箱预设场景
+
+ClawVault 内置 21 个"一键应用"保险箱预设（Vault Presets），每个预设是一套完整配置（检测开关 + 守护模式 + 文件监控 + 规则）的打包，`clawvault vault apply <id>` 即可切换到对应场景。
+
+### 通用场景（5 个）
+
+| ID | 图标 | 场景 | 守护模式 |
+|---|---|---|---|
+| `file-protection` | 📁 | 敏感文件保护（`.env`、证书、密钥） | strict |
+| `photo-protection` | 📷 | 图片/媒体元数据（EXIF、GPS） | interactive |
+| `account-secrets` | 🔐 | API 密钥、密码、JWT、云凭证 | strict |
+| `privacy-shield` | 🛡️ | 个人隐私（PII、邮箱、电话） | interactive |
+| `full-lockdown` | 🔒 | 最高级保护，阻断所有威胁 | strict |
+
+### 开发与工程（6 个）
+
+| ID | 图标 | 场景 | 守护模式 |
+|---|---|---|---|
+| `developer-workflow` | 💻 | 本地开发（shell 历史、git 配置、SSH、源码密钥） | interactive |
+| `source-code-repo` | 📦 | Git 仓库代码硬编码密钥扫描 | strict |
+| `ci-cd-pipelines` | 🔧 | CI 配置（GitHub Actions、GitLab CI、Jenkins） | strict |
+| `mobile-dev` | 📱 | 移动开发（Firebase、keystore、签名） | strict |
+| `cloud-infra` | ☁️ | IaC（Terraform、K8s、Ansible） | strict |
+| `database-protection` | 🗄️ | 数据库导出、连接串、备份 | strict |
+
+### 资产与合规（7 个）
+
+| ID | 图标 | 场景 | 守护模式 |
+|---|---|---|---|
+| `crypto-wallet` | 💰 | 加密货币钱包、助记词、keystore | strict |
+| `financial-strict` | 💳 | 金融合规（信用卡、IBAN、账单） | strict |
+| `healthcare-hipaa` | 🏥 | 医疗数据、HIPAA 合规 | strict |
+| `gdpr-compliance` | 🇪🇺 | GDPR 合规、欧盟 PII | strict |
+| `legal-contracts` | 📜 | 合同、NDA、法律文档 | interactive |
+| `hr-recruiting` | 👔 | 简历、招聘、候选人材料 | interactive |
+| `backup-archive` | 🗜️ | 备份归档文件（tar、zip、7z） | strict |
+
+### 组织与协作（3 个）
+
+| ID | 图标 | 场景 | 守护模式 |
+|---|---|---|---|
+| `enterprise-internal` | 🏢 | 企业内部信息（员工邮箱、Slack token） | interactive |
+| `communication-logs` | 💬 | 邮件/IM 导出（`*.eml`、`*.mbox`、chat log） | interactive |
+| `audit-only` | 📝 | 全量检测 + 全部放行（接入/学习期） | permissive |
+
+### 使用方式
+
+```bash
+# 列出所有预设
+clawvault vault list
+
+# 查看预设详情
+clawvault vault show developer-workflow
+
+# 应用预设到全局配置
+clawvault vault apply crypto-wallet
+
+# 或在仪表盘 Vaults tab 点击卡片应用
+```
+
+每个预设是独立配置快照，应用即覆盖当前 `~/.ClawVault/config.yaml` 的 `detection` / `guard` / `file_monitor` / `rules` 段，立即生效。
+
 ## 规划中（未来版本）
 
 | 类别 | 场景 |

@@ -16,6 +16,7 @@ from mitmproxy import http
 
 from claw_vault.audit.models import AuditRecord
 from claw_vault.detector.engine import DetectionEngine, ScanResult
+from claw_vault.detector.patterns import DetectionResult, PatternCategory
 from claw_vault.guard.action import Action, ActionResult
 from claw_vault.guard.rule_engine import RuleEngine
 from claw_vault.monitor.token_counter import TokenCounter
@@ -74,15 +75,6 @@ class ClawVaultAddon:
         self._flagged_file_values: dict[str, set[str]] = {}
         self._flagged_lock = threading.Lock()
 
-        # Proxy pause state (used by strict mode file monitor enforcement)
-        self._paused = False
-        self._pause_reason: str | None = None
-        self._pause_event_id: str | None = None
-        self._pause_lock = threading.Lock()
-        self._pause_time: float | None = None
-        self._auto_resume_seconds: int = 300  # 5 minutes
-        self._auto_resume_timer: threading.Timer | None = None
-
         logger.info(
             "interceptor_initialized",
             session_id=self._session_id,
@@ -91,29 +83,6 @@ class ClawVaultAddon:
 
     def request(self, flow: http.HTTPFlow) -> None:
         """Intercept outgoing request to AI provider."""
-        # Pause guard: block all intercepted requests when proxy is paused
-        if self._is_paused and self._should_intercept(flow):
-            with self._pause_lock:
-                reason = self._pause_reason or "security event"
-            flow.response = http.Response.make(
-                403,
-                json.dumps(
-                    {
-                        "error": {
-                            "message": (
-                                f"[ClawVault] Proxy paused: {reason}. "
-                                "Acknowledge the alert in the ClawVault dashboard to resume."
-                            ),
-                            "type": "claw_vault_paused",
-                            "code": "proxy_paused",
-                        },
-                    }
-                ),
-                {"Content-Type": "application/json"},
-            )
-            logger.info("request_blocked_proxy_paused", url=flow.request.pretty_url)
-            return
-
         start_time = time.monotonic()
         flow_id = str(id(flow))
 
@@ -154,59 +123,68 @@ class ClawVaultAddon:
         session_id = None
 
         # Check for content from security-flagged files
-        flagged_values = self._get_all_flagged_values()
-        if flagged_values and scan_text:
-            matched_flagged = [v for v in flagged_values if v in scan_text]
-            if matched_flagged:
-                logger.warning(
-                    "request_contains_flagged_file_content",
-                    flow_id=flow_id,
-                    matched_count=len(matched_flagged),
-                )
-                flow.response = http.Response.make(
-                    403,
-                    json.dumps(
-                        {
-                            "error": {
-                                "message": (
-                                    "[ClawVault] Request blocked: contains content "
-                                    "from security-flagged files. Review file monitor "
-                                    "alerts in the dashboard."
-                                ),
-                                "type": "claw_vault_file_monitor_block",
-                                "code": "flagged_file_content",
-                            },
-                        }
-                    ),
-                    {"Content-Type": "application/json"},
-                )
-                self._emit_audit(
-                    flow,
-                    ScanResult(),
-                    "block_file_content",
-                    body,
-                    agent_id=agent_id,
-                    user_content=scan_text,
-                )
-                self._pending_requests[flow_id] = {
-                    "original_body": received_body,
-                    "forwarded_body": body,
-                    "request_headers": dict(flow.request.headers),
-                    "start_time": start_time,
-                    "model": self.token_counter.detect_model_from_url(
-                        flow.request.pretty_url
-                    ),
-                    "agent_id": agent_id,
-                    "session_id": session_id,
-                    "agent_config": {},
-                    "action": "block_file_content",
-                    "risk_level": "critical",
-                    "risk_score": 10.0,
-                    "response_logged": False,
-                    "synthetic_response": False,
-                }
-                self._log_synthetic_response_event(flow, flow_id)
-                return
+        # Two layers: (1) file paths checked against last user msg only (not history)
+        #             (2) sensitive values checked against full turn (incl. tool results)
+        flagged_paths = self._get_flagged_paths()
+        flagged_content = self._get_flagged_content_values()
+        user_msg = self._extract_last_user_message(body) if flagged_paths else ""
+        matched_flagged = [p for p in flagged_paths if p in user_msg]
+        if not matched_flagged and flagged_content and scan_text:
+            matched_flagged = [v for v in flagged_content if v in scan_text]
+        if matched_flagged:
+            # Remember the blocked content so it's stripped from future requests
+            self._blocked_contents.add(scan_text)
+            logger.warning(
+                "request_contains_flagged_file_content",
+                flow_id=flow_id,
+                matched_count=len(matched_flagged),
+            )
+            # Build a ScanResult that reflects the file monitor detection
+            file_scan = self._build_file_block_scan(matched_flagged)
+            flow.response = http.Response.make(
+                403,
+                json.dumps(
+                    {
+                        "error": {
+                            "message": (
+                                "[ClawVault] Request blocked: contains content "
+                                "from security-flagged files. Review file monitor "
+                                "alerts in the dashboard."
+                            ),
+                            "type": "claw_vault_file_monitor_block",
+                            "code": "flagged_file_content",
+                        },
+                    }
+                ),
+                {"Content-Type": "application/json"},
+            )
+            self._emit_audit(
+                flow,
+                file_scan,
+                "block_file_content",
+                body,
+                agent_id=agent_id,
+                user_content=scan_text,
+            )
+            self._pending_requests[flow_id] = {
+                "original_body": received_body,
+                "forwarded_body": body,
+                "request_headers": dict(flow.request.headers),
+                "start_time": start_time,
+                "model": self.token_counter.detect_model_from_url(
+                    flow.request.pretty_url
+                ),
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "agent_config": {},
+                "action": "block_file_content",
+                "risk_level": file_scan.threat_level.value,
+                "risk_score": file_scan.max_risk_score,
+                "response_logged": False,
+                "synthetic_response": False,
+            }
+            self._log_synthetic_response_event(flow, flow_id)
+            return
 
         # Get agent-specific config (priority: agent > global > defaults)
         agent_config = _get_agent_config(agent_id)
@@ -429,15 +407,69 @@ class ClawVaultAddon:
         )
 
     @staticmethod
-    def _extract_user_content(body: str) -> str:
-        """Extract the LAST user message from OpenAI/Anthropic JSON body.
+    def _extract_msg_text(msg: dict) -> str:
+        """Return the text content of a single message dict."""
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            # Vision/multimodal or tool-result parts
+            parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get("type") == "text":
+                        parts.append(item.get("text", ""))
+                    elif item.get("type") == "tool_result":
+                        # Anthropic nested tool results
+                        inner = item.get("content", "")
+                        if isinstance(inner, str):
+                            parts.append(inner)
+                        elif isinstance(inner, list):
+                            for sub in inner:
+                                if isinstance(sub, dict) and sub.get("type") == "text":
+                                    parts.append(sub.get("text", ""))
+            return "\n".join(parts)
+        return ""
 
-        Chat APIs send the full conversation history in every request.
-        We only scan the latest user message because:
-        - System prompts cause false positive injection detections.
-        - Previous user messages were already scanned when first sent.
-        - Scanning the full history causes safe new messages (e.g. "hi")
-          to be blocked because an earlier message contained sensitive data.
+    _SELF_REF_MARKERS = ("clawvault", ".clawvault", "claw_vault", "claw-vault")
+
+    @staticmethod
+    def _is_clawvault_tool_call(tool_call: dict) -> bool:
+        """Check if a tool call targets ClawVault's own files/config.
+
+        Supports both OpenAI format (function.arguments JSON string) and
+        Anthropic format (input dict with arbitrary keys).
+        """
+        # OpenAI format: {"function": {"name": ..., "arguments": "..."}}
+        func = tool_call.get("function", {})
+        args_str = func.get("arguments", "")
+        if args_str:
+            args_lower = args_str.lower()
+            if any(m in args_lower for m in ClawVaultAddon._SELF_REF_MARKERS):
+                return True
+
+        # Anthropic format: {"type": "tool_use", "input": {...}}
+        tool_input = tool_call.get("input", {})
+        if isinstance(tool_input, dict):
+            input_str = json.dumps(tool_input).lower()
+            if any(m in input_str for m in ClawVaultAddon._SELF_REF_MARKERS):
+                return True
+
+        return False
+
+    @staticmethod
+    def _extract_user_content(body: str) -> str:
+        """Extract the latest user turn from OpenAI/Anthropic JSON body.
+
+        A "turn" starts at the last user message and includes all subsequent
+        messages (assistant tool_calls, tool results) up to the end of the
+        messages array.  This captures sensitive data that tools may have
+        returned (e.g. file contents) while still skipping system prompts
+        and earlier conversation history that was already scanned.
+
+        Tool results from reads of ClawVault's own files (skill docs, config,
+        vault presets) are excluded to prevent self-triggering, as these
+        contain security keywords that would cause false positives.
 
         Falls back to the full body if JSON parsing fails.
         """
@@ -452,29 +484,114 @@ class ClawVaultAddon:
         # OpenAI format: {"messages": [{"role": "user", "content": "..."}]}
         messages = data.get("messages")
         if isinstance(messages, list):
-            # Find the LAST user message only
-            for msg in reversed(messages):
-                if not isinstance(msg, dict):
-                    continue
-                if msg.get("role") != "user":
-                    continue
-                content = msg.get("content", "")
-                if isinstance(content, str) and content:
-                    return ClawVaultAddon._strip_openclaw_metadata(content)
-                elif isinstance(content, list):
-                    # Vision/multimodal: [{"type": "text", "text": "..."}]
-                    parts = []
-                    for item in content:
-                        if isinstance(item, dict) and item.get("type") == "text":
-                            parts.append(item.get("text", ""))
-                    if parts:
-                        return "\n".join(parts)
+            # Find the index of the LAST user message
+            last_user_idx = -1
+            for i in range(len(messages) - 1, -1, -1):
+                msg = messages[i]
+                if isinstance(msg, dict) and msg.get("role") == "user":
+                    last_user_idx = i
+                    break
+
+            if last_user_idx >= 0:
+                # Build set of tool_call IDs that target ClawVault's own files
+                # so we can skip their results from the scan text.
+                # This prevents "self-triggering": vault configs contain security
+                # keywords (pattern names/descriptions) that would cause false positives.
+                clawvault_tool_call_ids: set[str] = set()
+                for msg in messages[last_user_idx:]:
+                    if not isinstance(msg, dict):
+                        continue
+                    if msg.get("role") == "assistant":
+                        # OpenAI format: tool_calls list
+                        for tc in msg.get("tool_calls", []):
+                            if isinstance(tc, dict) and ClawVaultAddon._is_clawvault_tool_call(tc):
+                                tc_id = tc.get("id", "")
+                                if tc_id:
+                                    clawvault_tool_call_ids.add(tc_id)
+                        # Anthropic format: content blocks with type "tool_use"
+                        content = msg.get("content")
+                        if isinstance(content, list):
+                            for block in content:
+                                if (
+                                    isinstance(block, dict)
+                                    and block.get("type") == "tool_use"
+                                    and ClawVaultAddon._is_clawvault_tool_call(block)
+                                ):
+                                    tu_id = block.get("id", "")
+                                    if tu_id:
+                                        clawvault_tool_call_ids.add(tu_id)
+
+                # Collect text from the last user message and all messages after it
+                # (assistant tool_calls, tool results, etc.)
+                parts = []
+                for msg in messages[last_user_idx:]:
+                    if not isinstance(msg, dict):
+                        continue
+                    role = msg.get("role", "")
+                    # Skip system prompts (shouldn't appear after user, but be safe)
+                    if role == "system":
+                        continue
+                    # Skip OpenAI tool results from ClawVault's own file reads
+                    if role == "tool" and msg.get("tool_call_id") in clawvault_tool_call_ids:
+                        continue
+                    # For user messages with Anthropic tool_result blocks,
+                    # filter out only the ClawVault-related tool results
+                    if role == "user" and clawvault_tool_call_ids:
+                        content = msg.get("content")
+                        if isinstance(content, list):
+                            filtered = [
+                                item for item in content
+                                if not (
+                                    isinstance(item, dict)
+                                    and item.get("type") == "tool_result"
+                                    and item.get("tool_use_id") in clawvault_tool_call_ids
+                                )
+                            ]
+                            if filtered != content:
+                                # Reconstruct message with filtered content
+                                filtered_msg = {**msg, "content": filtered}
+                                text = ClawVaultAddon._extract_msg_text(filtered_msg)
+                                if text:
+                                    text = ClawVaultAddon._strip_openclaw_metadata(text)
+                                    parts.append(text)
+                                continue
+                    text = ClawVaultAddon._extract_msg_text(msg)
+                    if text:
+                        if role == "user":
+                            text = ClawVaultAddon._strip_openclaw_metadata(text)
+                        parts.append(text)
+                if parts:
+                    return "\n".join(parts)
 
         # Anthropic format: {"prompt": "..."}
         prompt = data.get("prompt")
         if isinstance(prompt, str) and prompt:
             return prompt
 
+        return body
+
+    @staticmethod
+    def _extract_last_user_message(body: str) -> str:
+        """Extract ONLY the last user message text (no tool results)."""
+        try:
+            data = json.loads(body)
+        except (json.JSONDecodeError, TypeError):
+            return body
+        if not isinstance(data, dict):
+            return body
+        messages = data.get("messages")
+        if isinstance(messages, list):
+            for msg in reversed(messages):
+                if not isinstance(msg, dict):
+                    continue
+                if msg.get("role") != "user":
+                    continue
+                text = ClawVaultAddon._extract_msg_text(msg)
+                if text:
+                    return ClawVaultAddon._strip_openclaw_metadata(text)
+        prompt = data.get("prompt")
+        if isinstance(prompt, str) and prompt:
+            return prompt
         return body
 
     def _strip_blocked_messages(self, body: str) -> str:
@@ -587,6 +704,24 @@ class ClawVaultAddon:
 
     # ── File Monitor Enforcement ──
 
+    @staticmethod
+    def _build_file_block_scan(matched_values: list[str]) -> ScanResult:
+        """Build a ScanResult representing a file-monitor block for audit logging."""
+        detections = []
+        for val in matched_values:
+            detections.append(DetectionResult(
+                pattern_type="file_monitor_flagged",
+                category=PatternCategory.SSH_KEY,
+                value=val,
+                masked_value=val[:8] + "***" if len(val) > 8 else "***",
+                start=0,
+                end=len(val),
+                risk_score=9.5,
+                confidence=1.0,
+                description=f"Content from security-flagged file",
+            ))
+        return ScanResult(sensitive=detections)
+
     def flag_file_content(self, file_path: str, scan: ScanResult) -> None:
         """Register sensitive values from a flagged file for proxy-level blocking."""
         values = {det.value for det in scan.sensitive if det.value}
@@ -596,82 +731,15 @@ class ClawVaultAddon:
             else:
                 self._flagged_file_values.pop(file_path, None)
 
-    def unflag_file(self, file_path: str) -> None:
-        """Remove a file from the flagged set (e.g., after user acknowledgment)."""
+    def _get_flagged_paths(self) -> set[str]:
+        """Return all currently flagged file paths."""
         with self._flagged_lock:
-            self._flagged_file_values.pop(file_path, None)
+            return set(self._flagged_file_values.keys())
 
-    def _get_all_flagged_values(self) -> set[str]:
+    def _get_flagged_content_values(self) -> set[str]:
         """Return the union of all currently flagged sensitive values."""
         with self._flagged_lock:
             return {v for vals in self._flagged_file_values.values() for v in vals}
-
-    # ── Proxy Pause/Resume ──
-
-    def pause(self, reason: str, event_id: str | None = None) -> None:
-        """Pause the proxy — all intercepted requests will be blocked with 503."""
-        with self._pause_lock:
-            self._paused = True
-            self._pause_reason = reason
-            self._pause_event_id = event_id
-            self._pause_time = time.monotonic()
-        # Cancel any existing auto-resume timer
-        if self._auto_resume_timer:
-            self._auto_resume_timer.cancel()
-        # Start auto-resume timer
-        self._auto_resume_timer = threading.Timer(
-            self._auto_resume_seconds, self._auto_resume,
-        )
-        self._auto_resume_timer.daemon = True
-        self._auto_resume_timer.start()
-        logger.warning("proxy_paused", reason=reason, event_id=event_id,
-                        auto_resume_seconds=self._auto_resume_seconds)
-
-    def _auto_resume(self) -> None:
-        """Auto-resume after timeout."""
-        if self._paused:
-            logger.info("proxy_auto_resumed", after_seconds=self._auto_resume_seconds)
-            self.resume()
-
-    def resume(self) -> None:
-        """Resume normal proxy operation and clear flagged file values."""
-        if self._auto_resume_timer:
-            self._auto_resume_timer.cancel()
-            self._auto_resume_timer = None
-        with self._pause_lock:
-            previous_reason = self._pause_reason
-            self._paused = False
-            self._pause_reason = None
-            self._pause_event_id = None
-            self._pause_time = None
-        with self._flagged_lock:
-            self._flagged_file_values.clear()
-        logger.info("proxy_resumed", previous_reason=previous_reason)
-
-    @property
-    def _is_paused(self) -> bool:
-        return self._paused
-
-    @property
-    def is_paused(self) -> bool:
-        return self._paused
-
-    @property
-    def pause_info(self) -> dict[str, Any] | None:
-        with self._pause_lock:
-            if not self._paused:
-                return None
-            remaining = 0
-            if self._pause_time is not None:
-                elapsed = time.monotonic() - self._pause_time
-                remaining = max(0, self._auto_resume_seconds - int(elapsed))
-            return {
-                "paused": True,
-                "reason": self._pause_reason,
-                "event_id": self._pause_event_id,
-                "remaining_seconds": remaining,
-                "auto_resume_seconds": self._auto_resume_seconds,
-            }
 
     def _should_intercept(self, flow: http.HTTPFlow) -> bool:
         """Check if this flow targets an AI provider we should intercept."""

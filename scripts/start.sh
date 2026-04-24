@@ -80,7 +80,7 @@ print(f"{state}\t{root}")
 PY
 }
 
-# 1. Start claw-vault
+# 1. Start ClawVault
 HEALTH_PAYLOAD="$(curl -fsS http://127.0.0.1:8766/api/health 2>/dev/null || true)"
 if [ -n "$HEALTH_PAYLOAD" ]; then
     IFS=$'\t' read -r REDACTION_STATE REDACTION_ROOT <<< "$(inspect_redaction_status "$HEALTH_PAYLOAD")"
@@ -93,7 +93,7 @@ if [ -n "$HEALTH_PAYLOAD" ]; then
     else
         echo "⚠️  ClawVault dashboard is reachable, but OpenClaw transcript redaction is inactive"
         if command -v pkill > /dev/null 2>&1; then
-            pkill -f "claw-vault start" 2>/dev/null || true
+            pkill -f "clawvault start" 2>/dev/null || true
             sleep 2
             start_claw_vault
         else

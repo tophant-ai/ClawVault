@@ -19,10 +19,15 @@ PATTERN_TYPE_ALIASES: dict[str, set[str]] = {
 class RuleEngine:
     """Evaluates scan results and determines the appropriate action."""
 
-    def __init__(self, mode: str = "interactive", auto_sanitize: bool = True) -> None:
+    def __init__(
+        self,
+        mode: str = "interactive",
+        auto_sanitize: bool = True,
+        rules: list[RuleConfig] | None = None,
+    ) -> None:
         self._mode = mode
         self._auto_sanitize = auto_sanitize
-        self._rules: list[RuleConfig] = load_rules()
+        self._rules: list[RuleConfig] = list(rules) if rules is not None else load_rules()
 
     @property
     def rules(self) -> list[RuleConfig]:

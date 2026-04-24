@@ -1,6 +1,6 @@
 {
-  "name": "tophant-clawvault",
-  "version": "0.1.2",
+  "name": "tophant-clawvault-installer",
+  "version": "0.2.5",
   "description": "AI security system that protects agents from prompt injection, data leakage, and dangerous commands. Operates as local HTTP proxy to inspect traffic. Review SECURITY.md before installing.",
   "author": "Tophant SPAI Lab",
   "homepage": "https://github.com/tophant-ai/ClawVault",
@@ -14,12 +14,12 @@
     "network": "Downloads ClawVault package and proxies AI traffic for inspection"
   },
   "tags": ["security", "ai-protection", "proxy", "threat-detection", "privacy"],
-  "requirements": ["pyyaml", "requests"],
+  "requirements": ["pyyaml"],
   "python_version": ">=3.10",
   "commands": {
     "install": {
-      "description": "Install ClawVault with specified mode",
-      "usage": "install --mode [quick|standard|advanced]"
+      "description": "Install ClawVault with specified mode. Creates venv, installs from GitHub, generates config, integrates proxy, and starts services.",
+      "usage": "install --mode [quick|standard|advanced] [--no-start] [--no-proxy]"
     },
     "health": {
       "description": "Check ClawVault health status",
@@ -28,10 +28,6 @@
     "generate-rule": {
       "description": "Generate security rule from natural language or scenario",
       "usage": "generate-rule <policy> [--scenario <name>] [--apply]"
-    },
-    "status": {
-      "description": "Get ClawVault running status and statistics",
-      "usage": "status"
     },
     "test": {
       "description": "Run detection tests",

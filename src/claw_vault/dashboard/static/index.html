@@ -57,13 +57,13 @@
                 <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                 Dashboard
             </button>
-            <button onclick="switchTab('events')" id="nav-events" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
-                <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                Audit Log
-            </button>
             <button onclick="switchTab('vaults')" id="nav-vaults" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
                 <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 Vaults
+            </button>
+            <button onclick="switchTab('events')" id="nav-events" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
+                <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                Audit Log
             </button>
             <button onclick="switchTab('test')" id="nav-test" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
                 <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
@@ -73,10 +73,12 @@
                 <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                 Attack Cases
             </button>
+            <!-- Local Scan hidden temporarily
             <button onclick="switchTab('localscan')" id="nav-localscan" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors">
                 <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 Local Scan
             </button>
+            -->
         </nav>
         <div class="p-4 border-t border-gray-800/60">
             <div class="flex items-center gap-2">
@@ -99,33 +101,6 @@
         </header>
 
         <div class="p-8">
-            <!-- Proxy Paused Banner -->
-            <div id="proxy-pause-banner" class="hidden mb-4 bg-red-500/10 border border-red-500/40 rounded-2xl px-6 py-4">
-                <div class="flex items-center justify-between mb-3">
-                    <div class="flex items-center gap-3">
-                        <svg class="w-5 h-5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                        <div>
-                            <span class="text-sm font-semibold text-red-400">Proxy Paused</span>
-                            <span id="proxy-pause-reason" class="text-xs text-red-300/70 ml-2"></span>
-                            <span id="proxy-pause-countdown" class="ml-3 text-xs font-mono text-red-300 bg-red-500/20 px-2 py-0.5 rounded"></span>
-                        </div>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2 flex-wrap">
-                    <button onclick="resumeProxyEnforce()" class="px-3 py-1.5 bg-red-500 hover:bg-red-400 text-white text-xs font-semibold rounded-lg transition-colors" title="Resume proxy, same files will still trigger enforcement">
-                        Resume (Keep Enforcing)
-                    </button>
-                    <button onclick="resumeProxy()" class="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white text-xs font-semibold rounded-lg transition-colors" title="Resume proxy, exempt flagged files until they are modified">
-                        Resume (Exempt Until Modified)
-                    </button>
-                    <button onclick="resumeProxyExempt()" class="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 text-white text-xs font-semibold rounded-lg transition-colors" title="Resume proxy, permanently exempt all flagged files">
-                        Exempt All History
-                    </button>
-                    <button onclick="clearExemptions()" class="px-3 py-1.5 border border-blue-500/50 text-blue-400 hover:bg-blue-500/10 text-xs font-semibold rounded-lg transition-colors" title="Clear all exemptions and acknowledgements">
-                        Clear Exemptions
-                    </button>
-                </div>
-            </div>
             <!-- ============ DASHBOARD TAB (Protection Monitor) ============ -->
             <section id="tab-dashboard" class="tab-content fade-in">
                 <!-- Protection Status Bar -->
@@ -837,103 +812,8 @@ async function refreshMonitor() {
     // Security events
     if (secEvents) renderSecurityEvents(secEvents);
 
-    // Check proxy pause status
-    await checkProxyPause();
 }
 
-async function checkProxyPause() {
-    const status = await api('/proxy/pause-status');
-    const banner = document.getElementById('proxy-pause-banner');
-    if (!banner) return;
-    if (status && status.paused) {
-        banner.classList.remove('hidden');
-        const reasonEl = document.getElementById('proxy-pause-reason');
-        if (reasonEl) reasonEl.textContent = status.reason || '';
-        startPauseCountdown(status.remaining_seconds || 0);
-    } else {
-        banner.classList.add('hidden');
-        stopPauseCountdown();
-    }
-}
-
-let _pauseCountdownInterval = null;
-let _pauseRemainingSeconds = 0;
-
-function startPauseCountdown(seconds) {
-    stopPauseCountdown();
-    _pauseRemainingSeconds = seconds;
-    updateCountdownDisplay();
-    _pauseCountdownInterval = setInterval(() => {
-        _pauseRemainingSeconds--;
-        if (_pauseRemainingSeconds <= 0) {
-            _pauseRemainingSeconds = 0;
-            stopPauseCountdown();
-            // Auto-resumed on server side, hide banner
-            document.getElementById('proxy-pause-banner')?.classList.add('hidden');
-            showNotification('Proxy auto-resumed', 'success');
-            refreshMonitor();
-        }
-        updateCountdownDisplay();
-    }, 1000);
-}
-
-function stopPauseCountdown() {
-    if (_pauseCountdownInterval) {
-        clearInterval(_pauseCountdownInterval);
-        _pauseCountdownInterval = null;
-    }
-}
-
-function updateCountdownDisplay() {
-    const el = document.getElementById('proxy-pause-countdown');
-    if (!el) return;
-    const s = _pauseRemainingSeconds;
-    const min = Math.floor(s / 60);
-    const sec = s % 60;
-    el.textContent = `Auto-resume in ${min}:${String(sec).padStart(2, '0')}`;
-}
-
-async function resumeProxy() {
-    const result = await api('/proxy/resume', 'POST');
-    if (result && result.resumed) {
-        showNotification('Proxy resumed (exempt until modified)', 'success');
-        stopPauseCountdown();
-        document.getElementById('proxy-pause-banner')?.classList.add('hidden');
-    } else {
-        showNotification('Failed to resume proxy', 'error');
-    }
-}
-
-async function resumeProxyEnforce() {
-    const result = await api('/proxy/resume-enforce', 'POST');
-    if (result && result.resumed) {
-        showNotification('Proxy resumed (enforcement continues)', 'success');
-        stopPauseCountdown();
-        document.getElementById('proxy-pause-banner')?.classList.add('hidden');
-    } else {
-        showNotification('Failed to resume proxy', 'error');
-    }
-}
-
-async function resumeProxyExempt() {
-    const result = await api('/proxy/resume-exempt', 'POST');
-    if (result && result.resumed) {
-        showNotification('Proxy resumed (all history exempted)', 'success');
-        stopPauseCountdown();
-        document.getElementById('proxy-pause-banner')?.classList.add('hidden');
-    } else {
-        showNotification('Failed to resume proxy', 'error');
-    }
-}
-
-async function clearExemptions() {
-    const result = await api('/proxy/clear-exemptions', 'POST');
-    if (result && result.cleared) {
-        showNotification('Exemptions cleared — full enforcement restored', 'success');
-    } else {
-        showNotification('Failed to clear exemptions', 'error');
-    }
-}
 
 function renderAnalysisLog(logs) {
     const el = document.getElementById('analysis-log');
@@ -1895,15 +1775,34 @@ let _vaultFmPatterns = [];
 let _activeVaultId = null;
 
 async function loadVaults() {
-    const data = await api('/vaults/presets');
+    const [data, active] = await Promise.all([
+        api('/vaults/presets'),
+        api('/vaults/active'),
+    ]);
     if (data) {
         _vaults = data.presets || [];
     }
-    const active = await api('/vaults/active');
     if (active) {
         _activeVaultId = active.active_preset_id || null;
     }
     renderVaultsList();
+    // Auto-select the active vault if none is currently selected
+    if (!_currentVault && _activeVaultId) {
+        selectVault(_activeVaultId);
+    }
+}
+
+const VAULT_CARD_BORDER = {
+    activeSelected: 'ring-2 ring-green-500/80 border-green-500/60',
+    active: 'ring-2 ring-green-500/70 border-green-500/50',
+    selected: 'ring-1 ring-blue-400/70 border-blue-400/40',
+    default: 'border-gray-800/50',
+};
+
+function vaultCardBorder(isActive, isSelected) {
+    if (isActive) return isSelected ? VAULT_CARD_BORDER.activeSelected : VAULT_CARD_BORDER.active;
+    if (isSelected) return VAULT_CARD_BORDER.selected;
+    return VAULT_CARD_BORDER.default;
 }
 
 function renderVaultsList() {
@@ -1914,7 +1813,8 @@ function renderVaultsList() {
     }
     el.innerHTML = _vaults.map(v => {
         const isActive = _activeVaultId === v.id;
-        const borderClass = isActive ? 'ring-2 ring-green-500/70 border-green-500/50' : (_currentVault?.id === v.id ? 'ring-1 ring-vault-500' : 'border-gray-800/50');
+        const isSelected = _currentVault?.id === v.id;
+        const borderClass = vaultCardBorder(isActive, isSelected);
         return `
         <div onclick="selectVault('${v.id}')" class="bg-surface-900 rounded-xl border p-4 cursor-pointer hover:border-vault-500/50 transition-colors ${borderClass}">
             <div class="flex items-center gap-3 mb-2">

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "clawvault"
-version = "0.1.0"
+version = "0.2.0"
 description = "Atomic \"claw\" control: every AI reach, within your sight."
 readme = "README.md"
 license = {text = "MIT"}

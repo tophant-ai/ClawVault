@@ -95,11 +95,11 @@ class TestFlaggedFileBlocking:
         assert resp_data["error"]["code"] == "flagged_file_content"
 
     def test_unflag_allows_request(self, addon):
-        """After unflagging, request should pass through normally."""
+        """After clearing flags, request should pass through normally."""
         api_key = "sk-proj-abc123def456"
         scan = _make_scan_with_sensitive(api_key)
         addon.flag_file_content("/home/user/.env", scan)
-        addon.unflag_file("/home/user/.env")
+        addon.flag_file_content("/home/user/.env", ScanResult())
 
         body = _make_body(f"Use this key: {api_key}")
         flow = _DummyFlow(request=_DummyRequest(_text=body))
@@ -135,7 +135,7 @@ class TestFlaggedFileBlocking:
         # Simulate deletion: flag with empty scan
         addon.flag_file_content("/home/user/.env", ScanResult())
 
-        assert addon._get_all_flagged_values() == set()
+        assert addon._get_flagged_content_values() == set()
 
     def test_multiple_files_flagged(self, addon):
         """Multiple files can be flagged independently."""
@@ -144,12 +144,12 @@ class TestFlaggedFileBlocking:
         addon.flag_file_content("/a/.env", _make_scan_with_sensitive(key1))
         addon.flag_file_content("/b/.env", _make_scan_with_sensitive(key2))
 
-        all_values = addon._get_all_flagged_values()
+        all_values = addon._get_flagged_content_values()
         assert key1 in all_values
         assert key2 in all_values
 
-        # Unflag one file, other remains
-        addon.unflag_file("/a/.env")
-        all_values = addon._get_all_flagged_values()
+        # Clear one file via empty scan, other remains
+        addon.flag_file_content("/a/.env", ScanResult())
+        all_values = addon._get_flagged_content_values()
         assert key1 not in all_values
         assert key2 in all_values

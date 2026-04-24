@@ -5,6 +5,18 @@
 
 set -e
 
+# Auto-activate virtualenv so clawvault CLI is available
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [ -z "$VIRTUAL_ENV" ]; then
+    for v in venv .venv env; do
+        if [ -f "$PROJECT_DIR/$v/bin/activate" ]; then
+            source "$PROJECT_DIR/$v/bin/activate"
+            break
+        fi
+    done
+fi
+
 SERVICE_FILE="$HOME/.config/systemd/user/openclaw-gateway.service"
 
 echo "🔗 OpenClaw + ClawVault Setup"

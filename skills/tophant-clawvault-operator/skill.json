@@ -1,6 +1,6 @@
 {
-  "name": "openclaw-clawvault",
-  "version": "0.1.0",
+  "name": "tophant-clawvault-operator",
+  "version": "0.2.4",
   "description": "Operate ClawVault services, configuration, vault presets, scanning, and local filesystem security scans from OpenClaw agents.",
   "author": "Tophant SPAI Lab",
   "homepage": "https://github.com/tophant-ai/ClawVault",
@@ -14,7 +14,15 @@
     "network": "Probes service ports and communicates with dashboard API"
   },
   "tags": ["security", "operations", "proxy", "scanning", "vault", "config"],
-  "requirements": ["pyyaml", "requests"],
+  "metadata": {
+    "openclaw": {
+      "requires": {
+        "bins": ["python3", "pgrep"],
+        "skills": ["tophant-clawvault-installer"]
+      }
+    }
+  },
+  "requirements": ["pyyaml"],
   "python_version": ">=3.10",
   "commands": {
     "start": {
@@ -49,6 +57,14 @@
       "description": "Set a configuration value by dotted key",
       "usage": "config-set <key> <value>"
     },
+    "config-append": {
+      "description": "Append a value to a list config field (e.g. file_monitor.watch_paths). Hot-patches if dashboard running.",
+      "usage": "config-append <key> <value>"
+    },
+    "config-remove": {
+      "description": "Remove a value from a list config field. Hot-patches if dashboard running.",
+      "usage": "config-remove <key> <value>"
+    },
     "vault-list": {
       "description": "List all vault presets",
       "usage": "vault-list"
@@ -58,8 +74,24 @@
       "usage": "vault-show <preset_id>"
     },
     "vault-apply": {
-      "description": "Apply a vault preset to active configuration",
+      "description": "Apply a vault preset to active configuration (hot-patches if dashboard running)",
       "usage": "vault-apply <preset_id>"
+    },
+    "vault-create": {
+      "description": "Create a custom vault preset from current configuration",
+      "usage": "vault-create <name> [--id <preset_id>] [--description <desc>] [--icon <emoji>]"
+    },
+    "vault-update": {
+      "description": "Update a custom vault preset's metadata or re-snapshot config",
+      "usage": "vault-update <preset_id> [--name <name>] [--description <desc>] [--icon <emoji>] [--from-current]"
+    },
+    "vault-delete": {
+      "description": "Delete a custom vault preset (builtin presets cannot be deleted)",
+      "usage": "vault-delete <preset_id>"
+    },
+    "vault-active": {
+      "description": "Show which vault preset is currently active",
+      "usage": "vault-active"
     },
     "local-scan": {
       "description": "Run an on-demand local filesystem scan",
@@ -80,6 +112,18 @@
     "scan-history": {
       "description": "Show recent local scan results",
       "usage": "scan-history [--limit 20]"
+    },
+    "agent-list": {
+      "description": "List all registered agents and their detection configurations",
+      "usage": "agent-list"
+    },
+    "agent-set": {
+      "description": "Create or update per-agent config (guard mode, detection toggles). Use --no-* flags to disable specific detection categories.",
+      "usage": "agent-set <name> [--guard-mode permissive|interactive|strict] [--enabled|--disabled] [--no-prompt-injection] [--no-dangerous-commands] ..."
+    },
+    "agent-remove": {
+      "description": "Remove an agent configuration by ID or name",
+      "usage": "agent-remove <agent_id>"
     }
   }
 }

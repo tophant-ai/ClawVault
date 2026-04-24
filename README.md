@@ -87,8 +87,8 @@ The system will automatically generate and execute the corresponding policy rule
 - **🛡️ Prompt Injection Defense** — Block role hijacking, instruction override, data exfiltration
 - **⚠️ Dangerous Command Guard** — Intercept `rm -rf`, `curl|bash`, privilege escalation
 - **🔄 Auto-Sanitization** — Replace secrets with placeholders, restore on response
-- **💰 Token Budget Control** — Daily/monthly limits with cost alerts
 - **📊 Real-time Dashboard** — Web UI with per-agent config, detection details, quick tests
+- **🗂️ 21 Built-in Vault Presets** — One-click scenarios for developer workflow, CI/CD, GDPR, HIPAA, crypto wallets, archives, and more
 
 The vault includes a **transparent proxy gateway module** that intercepts traffic between your AI tools and external APIs (OpenAI, Anthropic, etc.).
 
@@ -101,21 +101,21 @@ https://github.com/user-attachments/assets/1f424172-8833-4ccc-b0d2-abf67c1758dd
 
 ```bash
 # Install from ClawHub
-openclaw skills install tophant-clawvault
+openclaw skills install tophant-clawvault-installer
 
 # Or install via clawhub CLI
-clawhub install tophant-clawvault
+clawhub install tophant-clawvault-installer
 ```
 
-**ClawHub:** https://clawhub.ai/Martin2877/tophant-clawvault
+**ClawHub:** https://clawhub.ai/Martin2877/tophant-clawvault-installer
 
 The skill provides AI-guided installation and management:
-- `/clawvault install --mode quick` - Quick setup
-- `/clawvault health` - Check status
-- `/clawvault generate-rule "Block AWS credentials"` - Create security rules
-- `/clawvault test --category all` - Run detection tests
+- `/tophant-clawvault-installer install --mode quick` - Quick setup
+- `/tophant-clawvault-installer health` - Check status
+- `/tophant-clawvault-installer generate-rule "Block AWS credentials"` - Create security rules
+- `/tophant-clawvault-installer test --category all` - Run detection tests
 
-See [skills/tophant-clawvault/](skills/tophant-clawvault/) for skill documentation.
+See [skills/tophant-clawvault-installer/](skills/tophant-clawvault-installer/) for skill documentation.
 
 ### Option 2: Install as Python Package
 

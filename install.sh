@@ -10,7 +10,7 @@ set -e
 # Configuration
 REPO_URL="https://github.com/tophant-ai/ClawVault"
 RAW_URL="${REPO_URL}/raw/main/install.sh"
-VERSION="0.1.0"
+VERSION="0.2.0"
 
 # Colors
 RED='\033[0;31m'
@@ -104,18 +104,26 @@ upgrade_pip() {
     $PIP_CMD install --upgrade pip --quiet 2>/dev/null || true
 }
 
-# Install ClawVault
-install_clawvault() {
-    log_info "Installing ClawVault..."
+# Create virtual environment
+setup_venv() {
+    INSTALL_DIR="$HOME/.clawvault-env"
+    log_info "Creating virtual environment at $INSTALL_DIR ..."
 
-    # Try installing from PyPI
-    if $PIP_CMD install clawvault --quiet 2>/dev/null; then
-        log_info "Successfully installed from PyPI!"
-        return 0
+    if [ -d "$INSTALL_DIR" ] && [ -f "$INSTALL_DIR/bin/activate" ]; then
+        log_info "Virtual environment already exists"
+    else
+        $PYTHON_CMD -m venv "$INSTALL_DIR"
     fi
 
-    # PyPI failed, try GitHub
-    log_warn "PyPI install failed, trying GitHub..."
+    # Switch to venv pip
+    source "$INSTALL_DIR/bin/activate"
+    PIP_CMD="$PYTHON_CMD -m pip"
+    log_info "Virtual environment ready"
+}
+
+# Install ClawVault
+install_clawvault() {
+    log_info "Installing ClawVault from GitHub..."
 
     # Try latest version
     if $PIP_CMD install "git+${REPO_URL}.git" --quiet 2>/dev/null; then
@@ -148,6 +156,96 @@ verify_install() {
     fi
 }
 
+# Initialize config from template
+initialize_config() {
+    CONF_DIR="$HOME/.ClawVault"
+    CONF="$CONF_DIR/config.yaml"
+
+    if [ -f "$CONF" ]; then
+        log_info "Config already exists: $CONF"
+        return 0
+    fi
+
+    log_info "Initializing configuration..."
+
+    # Try to find config.example.yaml from installed package
+    EXAMPLE=$($PYTHON_CMD -c "
+import importlib.resources, pathlib, sys
+try:
+    pkg = importlib.resources.files('claw_vault')
+    p = pathlib.Path(str(pkg)) / 'config.example.yaml'
+    if p.exists(): print(p); sys.exit(0)
+    # fallback: walk parents
+    for parent in pathlib.Path(str(pkg)).parents:
+        c = parent / 'config.example.yaml'
+        if c.exists(): print(c); sys.exit(0)
+except: pass
+" 2>/dev/null)
+
+    mkdir -p "$CONF_DIR"
+
+    if [ -n "$EXAMPLE" ] && [ -f "$EXAMPLE" ]; then
+        cp "$EXAMPLE" "$CONF"
+        # Set ssl_verify: false for dev
+        sed -i 's/ssl_verify: true/ssl_verify: false/' "$CONF" 2>/dev/null || \
+        sed -i '' 's/ssl_verify: true/ssl_verify: false/' "$CONF"
+        log_info "Config created from template: $CONF"
+    else
+        # Fallback: use clawvault config init
+        clawvault config init 2>/dev/null || true
+        if [ -f "$CONF" ] && grep -q "ssl_verify: true" "$CONF"; then
+            sed -i 's/ssl_verify: true/ssl_verify: false/' "$CONF" 2>/dev/null || \
+            sed -i '' 's/ssl_verify: true/ssl_verify: false/' "$CONF"
+        fi
+        log_info "Config initialized: $CONF"
+    fi
+}
+
+# Integrate with OpenClaw proxy (if openclaw-gateway service exists)
+integrate_openclaw_proxy() {
+    SERVICE_FILE="$HOME/.config/systemd/user/openclaw-gateway.service"
+
+    if [ ! -f "$SERVICE_FILE" ]; then
+        log_info "OpenClaw gateway service not found, skipping proxy integration"
+        return 0
+    fi
+
+    log_info "Integrating with OpenClaw gateway..."
+
+    # Backup
+    cp "$SERVICE_FILE" "${SERVICE_FILE}.bak"
+
+    # Remove old proxy env lines
+    sed -i '/^Environment=ALL_PROXY=/d' "$SERVICE_FILE" 2>/dev/null || \
+    sed -i '' '/^Environment=ALL_PROXY=/d' "$SERVICE_FILE"
+    sed -i '/^Environment=HTTP_PROXY=/d' "$SERVICE_FILE" 2>/dev/null || \
+    sed -i '' '/^Environment=HTTP_PROXY=/d' "$SERVICE_FILE"
+    sed -i '/^Environment=HTTPS_PROXY=/d' "$SERVICE_FILE" 2>/dev/null || \
+    sed -i '' '/^Environment=HTTPS_PROXY=/d' "$SERVICE_FILE"
+    sed -i '/^Environment=NO_PROXY=/d' "$SERVICE_FILE" 2>/dev/null || \
+    sed -i '' '/^Environment=NO_PROXY=/d' "$SERVICE_FILE"
+    sed -i '/^Environment=NODE_TLS_REJECT_UNAUTHORIZED=/d' "$SERVICE_FILE" 2>/dev/null || \
+    sed -i '' '/^Environment=NODE_TLS_REJECT_UNAUTHORIZED=/d' "$SERVICE_FILE"
+
+    # Insert proxy env after [Service]
+    awk '
+    /^\[Service\]/ {
+        print $0
+        print "Environment=HTTP_PROXY=http://127.0.0.1:8765"
+        print "Environment=HTTPS_PROXY=http://127.0.0.1:8765"
+        print "Environment=NO_PROXY=localhost,127.0.0.1"
+        print "Environment=NODE_TLS_REJECT_UNAUTHORIZED=0"
+        next
+    }
+    { print }
+    ' "$SERVICE_FILE" > "${SERVICE_FILE}.tmp"
+    mv "${SERVICE_FILE}.tmp" "$SERVICE_FILE"
+
+    # Reload systemd
+    systemctl --user daemon-reload 2>/dev/null || true
+    log_info "Proxy configured in OpenClaw gateway service"
+}
+
 # Show welcome message
 show_welcome() {
     echo ""
@@ -155,11 +253,18 @@ show_welcome() {
     echo "     ClawVault Installation Complete!"
     echo "========================================"
     echo ""
-    echo "Usage:"
-    echo "  clawvault --help           Show help"
-    echo "  clawvault init             Initialize config"
-    echo "  clawvault guard            Start guard mode"
+    echo "Quick start:"
+    echo "  source $INSTALL_DIR/bin/activate"
+    echo "  clawvault start            Start proxy + dashboard"
     echo ""
+    echo "Commands:"
+    echo "  clawvault --help           Show help"
+    echo "  clawvault scan 'text'      Scan text for secrets"
+    echo "  clawvault demo             Run interactive demo"
+    echo "  clawvault status           Check service status"
+    echo ""
+    echo "Config: ~/.ClawVault/config.yaml"
+    echo "Dashboard: http://127.0.0.1:8766"
     echo "Docs: https://ClawVault.dev"
     echo ""
 }
@@ -171,29 +276,24 @@ main() {
     echo ""
 
     # Parse arguments
-   case "${1:-}" in
-        --pip-only)
-            log_info "Using pip-only mode..."
-            ;;
-        --github)
-            log_info "Using GitHub install mode..."
-            ;;
+    case "${1:-}" in
         --help|-h)
             echo "Usage: $0 [options]"
             echo ""
             echo "Options:"
-            echo "  --pip-only    Try PyPI install only"
-            echo "  --github      Force GitHub install"
             echo "  --help        Show this help"
             exit 0
             ;;
     esac
 
     check_python
+    setup_venv
     check_pip
     upgrade_pip
     install_clawvault
     verify_install
+    initialize_config
+    integrate_openclaw_proxy
     show_welcome
 }
 

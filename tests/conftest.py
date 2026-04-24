@@ -12,6 +12,12 @@ from claw_vault.guard.rule_engine import RuleEngine
 from claw_vault.monitor.token_counter import TokenCounter
 
 
+@pytest.fixture(autouse=True)
+def _isolate_user_rules(monkeypatch):
+    """Prevent tests from accidentally loading user rules from ~/.ClawVault/."""
+    monkeypatch.setattr("claw_vault.guard.rule_engine.load_rules", lambda: [])
+
+
 @pytest.fixture
 def sensitive_detector():
     return SensitiveDetector()

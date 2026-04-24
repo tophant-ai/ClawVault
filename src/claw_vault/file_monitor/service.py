@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import fnmatch
-import os
 import threading
 import time
 from collections.abc import Callable
@@ -54,11 +53,6 @@ class FileMonitorService:
         self._last_watch_error: str | None = None
         self._access_thread: threading.Thread | None = None
         self._access_last_seen: dict[str, float] = {}
-        # Paths acknowledged by user (resume) — keyed by path, value is file mtime at ack time.
-        # Enforcement is suppressed until the file is modified (mtime changes).
-        self._acknowledged_paths: dict[str, float] = {}
-        # Permanently exempted paths — enforcement never fires for these
-        self._exempted_paths: set[str] = set()
 
     # ── Properties ──
 
@@ -92,6 +86,7 @@ class FileMonitorService:
         if self.running:
             return
         self._stop_event.clear()
+        self._prescan_watched_files()
         self._thread = threading.Thread(target=self._run, daemon=True, name="file-monitor")
         self._thread.start()
         logger.info("file_monitor_started", watch_roots=[str(r) for r in self.watch_roots])
@@ -121,66 +116,6 @@ class FileMonitorService:
     def set_enforcement_callback(self, callback: Callable[[str, ScanResult], None]) -> None:
         """Set callback for proxy-layer enforcement when file threats are detected."""
         self._enforcement_callback = callback
-
-    def acknowledge_all(self) -> None:
-        """Mark all currently flagged paths as acknowledged.
-
-        Called when the user resumes the proxy.  Records each file's current
-        mtime so that enforcement is suppressed only while the file remains
-        unchanged.  If the file is later modified (mtime changes), the
-        acknowledgement becomes invalid and enforcement kicks in again.
-        """
-        with self._lock:
-            for event in self._recent_events:
-                if event.has_threats and event.enforcement_applied:
-                    try:
-                        mtime = os.path.getmtime(event.file_path)
-                    except OSError:
-                        continue
-                    self._acknowledged_paths[event.file_path] = mtime
-        logger.info(
-            "file_monitor.acknowledged_all",
-            paths=len(self._acknowledged_paths),
-        )
-
-    def _is_acknowledged(self, file_path: str) -> bool:
-        """Check if a file was acknowledged and has NOT been modified since."""
-        ack_mtime = self._acknowledged_paths.get(file_path)
-        if ack_mtime is None:
-            return False
-        try:
-            current_mtime = os.path.getmtime(file_path)
-        except OSError:
-            # File gone — no longer acknowledged
-            self._acknowledged_paths.pop(file_path, None)
-            return False
-        if current_mtime != ack_mtime:
-            # File was modified after acknowledge — re-enforce
-            self._acknowledged_paths.pop(file_path, None)
-            return False
-        return True
-
-    def exempt_all(self) -> None:
-        """Permanently exempt all currently flagged file paths from enforcement.
-
-        Unlike acknowledge (mtime-based, invalidated on modify), exempted paths
-        are never re-enforced regardless of file changes.
-        """
-        with self._lock:
-            for event in self._recent_events:
-                if event.has_threats:
-                    self._exempted_paths.add(event.file_path)
-        logger.info("file_monitor.exempt_all", paths=len(self._exempted_paths))
-
-    def _is_exempted(self, file_path: str) -> bool:
-        """Check if a file path is permanently exempted from enforcement."""
-        return file_path in self._exempted_paths
-
-    def clear_exemptions(self) -> None:
-        """Clear all exemptions and acknowledgements, restoring full enforcement."""
-        self._exempted_paths.clear()
-        self._acknowledged_paths.clear()
-        logger.info("file_monitor.cleared_exemptions")
 
     @property
     def guard_mode(self) -> str:
@@ -324,12 +259,7 @@ class FileMonitorService:
             # Enforcement: push flagged values to proxy layer
             # Only in strict/interactive mode — permissive logs only
             if self._enforcement_callback and self._guard_mode != "permissive":
-                if (
-                    scan
-                    and scan.has_threats
-                    and not self._is_acknowledged(str(path))
-                    and not self._is_exempted(str(path))
-                ):
+                if scan and scan.has_threats:
                     self._enforcement_callback(str(path), scan)
                     event.enforcement_applied = True
                     event.flagged_values_count = len(scan.sensitive)
@@ -368,6 +298,34 @@ class FileMonitorService:
                 roots.add(p)
 
         return tuple(sorted(roots))
+
+    def _prescan_watched_files(self) -> None:
+        """Pre-scan all sensitive files in watched directories at startup.
+
+        This pre-fills the proxy's flagged values so that requests referencing
+        monitored files are blocked from the very first request, rather than
+        only after the async file-access monitor detects an access event.
+        """
+        if not self._enforcement_callback or not self._detection_engine:
+            return
+        if self._guard_mode == "permissive":
+            return
+        count = 0
+        for root in self.watch_roots:
+            try:
+                for path in root.iterdir():
+                    if not path.is_file():
+                        continue
+                    if not self._is_sensitive_file(path):
+                        continue
+                    scan = self._scan_file_content(path)
+                    if scan and scan.has_threats:
+                        self._enforcement_callback(str(path), scan)
+                        count += 1
+            except OSError as exc:
+                logger.warning("prescan_dir_error", root=str(root), error=str(exc))
+        if count:
+            logger.info("prescan_flagged_files", count=count)
 
     def _is_sensitive_file(self, path: Path) -> bool:
         """Check if a file matches sensitive patterns or is managed."""
@@ -532,8 +490,6 @@ class FileMonitorService:
             and self._guard_mode != "permissive"
             and scan
             and scan.has_threats
-            and not self._is_acknowledged(str(path))
-            and not self._is_exempted(str(path))
         ):
             self._enforcement_callback(str(path), scan)
             event.enforcement_applied = True

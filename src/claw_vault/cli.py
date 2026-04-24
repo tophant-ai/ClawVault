@@ -148,15 +148,6 @@ async def _run_services(settings: Settings):
     # Wire enforcement callback: file monitor → proxy blocking
     def _enforcement_callback(file_path: str, scan: ScanResult) -> None:
         proxy.flag_file_content(file_path, scan)
-        # In strict mode, pause proxy for high/critical file threats
-        if (
-            settings.guard.mode == "strict"
-            and scan.has_threats
-            and scan.threat_level in (ThreatLevel.CRITICAL, ThreatLevel.HIGH)
-        ):
-            proxy.pause(
-                reason=f"High-risk file change detected: {Path(file_path).name}",
-            )
 
     file_monitor.set_enforcement_callback(_enforcement_callback)
     file_monitor.start()

@@ -38,7 +38,8 @@ cp -r doc clawvault-deploy/
 cp -r scripts clawvault-deploy/
 cp -r skills clawvault-deploy/
 chmod +x clawvault-deploy/scripts/*.sh 2>/dev/null || true
-chmod +x clawvault-deploy/skills/clawvault-installer-skill/clawvault_manager.py 2>/dev/null || true
+chmod +x clawvault-deploy/skills/tophant-clawvault-installer/clawvault_manager.py 2>/dev/null || true
+chmod +x clawvault-deploy/install.sh 2>/dev/null || true
 cp pyproject.toml clawvault-deploy/
 cp install.sh clawvault-deploy/
 cp README.md clawvault-deploy/
@@ -68,9 +69,9 @@ echo "✓ Extraction complete"
 ENDSSH
 
 echo "[6/6] Installing on server..."
-ssh "$SERVER_USER@$SERVER_IP" << 'ENDSSH'
+ssh "$SERVER_USER@$SERVER_IP" << ENDSSH
 set -e
-cd /root/prj/ClawVault
+cd $SERVER_PATH
 
 echo "→ Checking Python version..."
 python3 --version
@@ -155,5 +156,5 @@ echo "Run quick test:"
 echo "  ./scripts/test.sh"
 echo ""
 echo "Test skills:"
-echo "  python skills/clawvault-installer-skill/clawvault_manager.py health"
+echo "  python skills/tophant-clawvault-installer/clawvault_manager.py health"
 echo ""
