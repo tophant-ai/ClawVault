@@ -27,7 +27,7 @@ rules:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import structlog
 import yaml
@@ -85,7 +85,7 @@ class RuleConfig(BaseModel):
 
 def load_rules(
     path: Path | None = None,
-    raw_rules: list[dict] | None = None,
+    raw_rules: list[dict[str, Any]] | None = None,
 ) -> list[RuleConfig]:
     """Load rules from the unified config or from an explicit list of dicts.
 
@@ -125,7 +125,7 @@ def load_rules(
     return []
 
 
-def _parse_rule_dicts(entries: list) -> list[RuleConfig]:
+def _parse_rule_dicts(entries: list[Any]) -> list[RuleConfig]:
     """Validate a list of raw dicts into ``RuleConfig`` objects."""
     items: list[RuleConfig] = []
     for entry in entries:
@@ -149,7 +149,7 @@ def save_rules(rules: list[RuleConfig], path: Path | None = None) -> None:
         config_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Read existing config to preserve all other sections
-        existing: dict = {}
+        existing: dict[str, Any] = {}
         if config_path.exists():
             existing = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
             if not isinstance(existing, dict):
@@ -166,6 +166,6 @@ def save_rules(rules: list[RuleConfig], path: Path | None = None) -> None:
         logger.warning("guard.rules.save_failed", path=str(config_path), error=str(exc))
 
 
-def export_rules(rules: list[RuleConfig]) -> list[dict]:
+def export_rules(rules: list[RuleConfig]) -> list[dict[str, Any]]:
     """Convert rule models to plain dicts for JSON APIs."""
     return [r.model_dump(exclude_none=True) for r in rules]

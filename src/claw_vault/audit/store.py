@@ -163,18 +163,18 @@ class AuditStore:
         cutoff = (datetime.utcnow() - timedelta(days=retention_days)).isoformat()
         cursor = await self._db.execute("DELETE FROM audit_logs WHERE timestamp < ?", (cutoff,))
         await self._db.commit()
-        deleted = cursor.rowcount
+        deleted = int(cursor.rowcount or 0)
         if deleted:
             logger.info("audit_cleanup", deleted=deleted, retention_days=retention_days)
         return deleted
 
-    async def export_json(self, limit: int = 1000) -> list[dict]:
+    async def export_json(self, limit: int = 1000) -> list[dict[str, object]]:
         """Export recent records as JSON-serializable dicts."""
         records = await self.query_recent(limit)
         return [r.model_dump() for r in records]
 
     @staticmethod
-    def _row_to_record(row: tuple) -> AuditRecord:
+    def _row_to_record(row: tuple[object, ...]) -> AuditRecord:
         return AuditRecord(
             id=row[0],
             timestamp=datetime.fromisoformat(row[1]),

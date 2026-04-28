@@ -64,7 +64,7 @@ class FileMonitorService:
 
     @property
     def enabled(self) -> bool:
-        return self._config.enabled
+        return bool(self._config.enabled)
 
     @property
     def running(self) -> bool:
@@ -92,9 +92,21 @@ class FileMonitorService:
         if self.running:
             return
         self._stop_event.clear()
+        roots = self._resolve_watch_roots()
+        if not roots:
+            logger.warning("file_monitor_no_roots", mode=self._guard_mode)
+        elif self._guard_mode == "permissive":
+            logger.info(
+                "file_monitor_permissive_mode",
+                message="file changes are logged but not enforced",
+            )
         self._thread = threading.Thread(target=self._run, daemon=True, name="file-monitor")
         self._thread.start()
-        logger.info("file_monitor_started", watch_roots=[str(r) for r in self.watch_roots])
+        logger.info(
+            "file_monitor_started",
+            watch_roots=[str(r) for r in roots],
+            mode=self._guard_mode,
+        )
         if self._config.alert_on_access:
             self._start_access_monitor()
 
@@ -192,7 +204,12 @@ class FileMonitorService:
 
     def update_config(self, **kwargs: Any) -> None:
         """Hot-patch config fields. Restarts watch if root-affecting fields change."""
-        root_fields = {"watch_home_sensitive", "watch_paths", "alert_on_access"}
+        root_fields = {
+            "watch_home_sensitive",
+            "watch_project_sensitive",
+            "watch_paths",
+            "alert_on_access",
+        }
         needs_restart = False
         for key, value in kwargs.items():
             if hasattr(self._config, key):
@@ -345,11 +362,20 @@ class FileMonitorService:
         """Build the set of directories to watch."""
         roots: set[Path] = set()
 
+        # Current project directory: protect project-local .env/credential files by default.
+        if self._config.watch_project_sensitive:
+            try:
+                cwd = Path.cwd().resolve()
+                if cwd.is_dir():
+                    roots.add(cwd)
+            except OSError:
+                logger.warning("file_monitor_cwd_unavailable")
+
         # Home sensitive directories
         if self._config.watch_home_sensitive and self._file_manager:
             discovered = self._file_manager.auto_discover()
             for fpath in discovered:
-                parent = Path(fpath).parent
+                parent = Path(fpath).expanduser().resolve().parent
                 if parent.is_dir():
                     roots.add(parent)
 
@@ -357,13 +383,13 @@ class FileMonitorService:
         if self._config.watch_home_sensitive:
             home = Path.home()
             for d in [".aws", ".ssh", ".gnupg", ".config"]:
-                p = home / d
+                p = (home / d).resolve()
                 if p.is_dir():
                     roots.add(p)
 
         # Extra watch paths
         for extra in self._config.watch_paths:
-            p = Path(extra)
+            p = Path(extra).expanduser().resolve()
             if p.is_dir():
                 roots.add(p)
 
@@ -377,14 +403,34 @@ class FileMonitorService:
 
     def _matched_pattern(self, path: Path) -> str | None:
         """Return the first matching pattern, or None."""
-        name = path.name
+        candidates = self._pattern_candidates(path)
         for pattern in self._config.watch_patterns:
-            if fnmatch.fnmatch(name, pattern):
-                return pattern
+            normalized_pattern = pattern.replace(os.sep, "/")
+            if any(fnmatch.fnmatch(candidate, normalized_pattern) for candidate in candidates):
+                return str(pattern)
         return None
+
+    def _pattern_candidates(self, path: Path) -> set[str]:
+        """Build normalized names/relative paths that watch patterns can match."""
+        candidates = {path.name}
+        try:
+            resolved = path.expanduser().resolve(strict=False)
+        except OSError:
+            resolved = path.expanduser()
+
+        for root in (*self._resolve_watch_roots(), Path.home(), Path.cwd()):
+            try:
+                root_resolved = root.expanduser().resolve(strict=False)
+                candidates.add(str(resolved.relative_to(root_resolved)))
+            except (OSError, ValueError):
+                continue
+
+        return {candidate.replace(os.sep, "/") for candidate in candidates}
 
     def _scan_file_content(self, path: Path) -> Any | None:
         """Read file and run through DetectionEngine."""
+        if self._detection_engine is None:
+            return None
         try:
             content = path.read_text(encoding="utf-8", errors="replace")
             return self._detection_engine.scan_full(content)

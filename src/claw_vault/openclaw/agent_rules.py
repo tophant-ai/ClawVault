@@ -133,7 +133,7 @@ class AgentRuleResolver:
             return
 
         try:
-            import yaml  # type: ignore[import-untyped]
+            import yaml
 
             payload = yaml.safe_load(self._config_file.read_text(encoding="utf-8")) or {}
         except Exception as exc:

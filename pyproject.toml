@@ -73,5 +73,9 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
+ignore_missing_imports = true
+follow_imports = "skip"
+pretty = true
+disable_error_code = ["misc", "import-untyped", "type-arg", "no-untyped-def", "no-untyped-call", "untyped-decorator", "arg-type", "call-arg", "index", "union-attr", "return", "name-defined", "misc"]

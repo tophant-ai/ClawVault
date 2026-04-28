@@ -5,7 +5,7 @@ Covers scenarios: C5 (Skill permission governance) + E2 (supply-chain security s
 
 from __future__ import annotations
 
-from datetime import datetime
+from typing import Any
 
 from claw_vault.skills.base import (
     BaseSkill,
@@ -53,7 +53,7 @@ class SkillAuditSkill(BaseSkill):
         records = self.ctx.get_audit_records()
 
         # Collect unique skills seen in audit
-        seen_skills: dict[str, dict] = {}
+        seen_skills: dict[str, dict[str, Any]] = {}
         for r in records:
             skill = r.get("skill", "")
             if skill and skill not in seen_skills:
@@ -122,7 +122,7 @@ class SkillAuditSkill(BaseSkill):
 
         # Analyze behavior
         total = len(skill_records)
-        actions = {}
+        actions: dict[str, int] = {}
         risk_events = 0
         for r in skill_records:
             action = r.get("action", "unknown")
@@ -167,7 +167,7 @@ class SkillAuditSkill(BaseSkill):
         records = self.ctx.get_audit_records()
         recent = records[-limit:] if len(records) > limit else records
 
-        timeline = []
+        timeline: list[dict[str, Any]] = []
         for r in recent:
             timeline.append(
                 {

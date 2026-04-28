@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 from claw_vault.skills.base import (
     BaseSkill,
@@ -182,7 +183,7 @@ class VaultGuardSkill(BaseSkill):
     )
     def check_exfiltration(self, url: str, content: str = "", skill_name: str = "") -> SkillResult:
         """Detect potential data exfiltration in outbound requests."""
-        risks = []
+        risks: list[dict[str, Any]] = []
 
         # Check target domain
         for pattern in SUSPICIOUS_DOMAIN_PATTERNS:

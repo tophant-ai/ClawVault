@@ -104,6 +104,7 @@ async def _run_services(settings: Settings):
     from claw_vault.local_scan.scheduler import ScanScheduler
     from claw_vault.monitor.budget import BudgetManager
     from claw_vault.proxy.server import ProxyServer
+    from claw_vault.vault.file_manager import FileManager
 
     # Initialize audit store
     db_path = settings.config_dir / "data" / "audit.db"
@@ -137,10 +138,11 @@ async def _run_services(settings: Settings):
     console.print("[green]✓[/green] Audit callback wired (records will be stored)")
 
     # Start file monitor
+    file_manager = FileManager()
     file_monitor = FileMonitorService(
         config=settings.file_monitor,
         detection_engine=proxy.detection_engine,
-        file_manager=None,
+        file_manager=file_manager,
         guard_mode=settings.guard.mode,
     )
     file_monitor.set_event_callback(push_file_monitor_event)
@@ -161,9 +163,16 @@ async def _run_services(settings: Settings):
     file_monitor.set_enforcement_callback(_enforcement_callback)
     file_monitor.start()
     if file_monitor.running:
+        mode_note = " — logs only" if settings.guard.mode == "permissive" else ""
         console.print(
-            f"[green]✓[/green] File monitor started (watching {len(file_monitor.watch_roots)} directories)"
+            f"[green]✓[/green] File monitor started "
+            f"(watching {len(file_monitor.watch_roots)} directories, mode={settings.guard.mode}{mode_note})"
         )
+        if not file_monitor.watch_roots:
+            console.print(
+                "[yellow]⚠ File monitor has no watch directories; configure file_monitor.watch_paths "
+                "or enable project/home watching.[/yellow]"
+            )
 
     # Start local scan scheduler
     local_scanner = LocalScanner(
@@ -653,7 +662,7 @@ def config_set(
         console.print(f"[dim]Saved to {path}[/dim]")
     else:
         console.print(f"[red]Error: Unknown field '{field}' in section '{section_name}'[/red]")
-        fields = [f for f in section.model_fields.keys()]
+        fields = [f for f in section.__dict__.keys() if not f.startswith("_")]
         console.print(f"Available fields: {', '.join(fields)}")
         raise typer.Exit(1)
 
@@ -854,7 +863,7 @@ def vault_show(
 # ── Local Scan subcommands ─────────────────────────────────────
 
 local_scan_app = typer.Typer(help="Local filesystem security scanning")
-app.add_typer(local_scan_app, name="local-scan")
+app.add_typer(local_scan_app, name="local-scan", hidden=True)
 
 
 @local_scan_app.command("run")

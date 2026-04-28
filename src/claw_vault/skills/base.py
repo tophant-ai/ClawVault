@@ -17,7 +17,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
+
+if TYPE_CHECKING:
+    from collections.abc import Callable as AbcCallable
 
 import structlog
 
@@ -44,8 +47,8 @@ class ToolDefinition:
     name: str
     description: str
     parameters: dict[str, Any]  # JSON Schema for parameters
-    handler: Callable
-    examples: list[dict] = field(default_factory=list)
+    handler: Callable[..., Any]
+    examples: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -106,12 +109,12 @@ class SkillContext:
         self.file_manager = FileManager()
         self._audit_records: list[dict] = []
 
-    def log_audit(self, record: dict) -> None:
+    def log_audit(self, record: dict[str, Any]) -> None:
         """Append an audit record (in-memory; flushed by audit store)."""
         record.setdefault("timestamp", datetime.utcnow().isoformat())
         self._audit_records.append(record)
 
-    def get_audit_records(self) -> list[dict]:
+    def get_audit_records(self) -> list[dict[str, Any]]:
         return list(self._audit_records)
 
     def clear_audit(self) -> None:
@@ -122,7 +125,7 @@ def tool(
     name: str | None = None,
     description: str = "",
     parameters: dict[str, Any] | None = None,
-    examples: list[dict] | None = None,
+    examples: list[dict[str, Any]] | None = None,
 ):
     """Decorator to register a method as a Skill tool.
 
@@ -133,11 +136,11 @@ def tool(
                 ...
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         tool_name = name or func.__name__
         # Auto-generate parameter schema from type hints
         sig = inspect.signature(func)
-        auto_params = {}
+        auto_params: dict[str, dict[str, str]] = {}
         for pname, param in sig.parameters.items():
             if pname == "self":
                 continue
@@ -153,19 +156,19 @@ def tool(
                 "description": pname,
             }
 
-        func._tool_def = ToolDefinition(
+        setattr(func, "_tool_def", ToolDefinition(
             name=tool_name,
             description=description or func.__doc__ or "",
             parameters=parameters or auto_params,
             handler=func,
             examples=examples or [],
-        )
+        ))
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
 
-        wrapper._tool_def = func._tool_def
+        wrapper._tool_def = func._tool_def  # type: ignore[attr-defined]
         return wrapper
 
     return decorator

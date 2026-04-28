@@ -58,6 +58,7 @@ openclaw:
 file_monitor:
   enabled: true
   watch_home_sensitive: true
+  watch_project_sensitive: true
   watch_patterns:
     - ".env"
     - ".env.*"

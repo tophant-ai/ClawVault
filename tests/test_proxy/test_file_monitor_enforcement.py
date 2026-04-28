@@ -8,8 +8,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from claw_vault.config import FileMonitorConfig
 from claw_vault.detector.engine import DetectionEngine, ScanResult
 from claw_vault.detector.patterns import DetectionResult, PatternCategory
+from claw_vault.file_monitor.service import FileMonitorService
 from claw_vault.proxy.interceptor import ClawVaultAddon
 
 
@@ -79,6 +81,36 @@ def addon():
 
 
 class TestFlaggedFileBlocking:
+    def test_file_monitor_flags_project_secret_and_proxy_blocks(self, addon, tmp_path, monkeypatch):
+        """Default project monitoring should feed flagged secrets into proxy enforcement."""
+        monkeypatch.chdir(tmp_path)
+        config = FileMonitorConfig(
+            enabled=True,
+            watch_home_sensitive=False,
+            watch_paths=[],
+            watch_project_sensitive=True,
+        )
+        service = FileMonitorService(
+            config=config,
+            detection_engine=DetectionEngine(),
+            guard_mode="strict",
+        )
+        service.set_enforcement_callback(addon.flag_file_content)
+
+        api_key = "sk-proj-abcdef1234567890abcdef1234567890abcdef12345678"
+        env_file = tmp_path / ".env"
+        env_file.write_text(f"OPENAI_API_KEY={api_key}")
+        service._handle_changes({(1, str(env_file))})
+
+        body = _make_body(f"Please use {api_key}")
+        flow = _DummyFlow(request=_DummyRequest(_text=body))
+        addon.request(flow)
+
+        assert flow.response is not None
+        assert flow.response.status_code == 403
+        resp_data = json.loads(flow.response.get_content().decode())
+        assert resp_data["error"]["code"] == "flagged_file_content"
+
     def test_flagged_value_blocks_request(self, addon):
         """Request containing a flagged sensitive value should be blocked with 403."""
         api_key = "sk-proj-abc123def456"

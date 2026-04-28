@@ -45,11 +45,11 @@ class CryptoEngine:
 
     def encrypt(self, plaintext: str) -> str:
         """Encrypt a string value. Returns base64-encoded ciphertext."""
-        return self._fernet.encrypt(plaintext.encode()).decode()
+        return str(self._fernet.encrypt(plaintext.encode()).decode())
 
     def decrypt(self, ciphertext: str) -> str:
         """Decrypt a base64-encoded ciphertext. Returns plaintext string."""
-        return self._fernet.decrypt(ciphertext.encode()).decode()
+        return str(self._fernet.decrypt(ciphertext.encode()).decode())
 
     @staticmethod
     def generate_salt() -> bytes:

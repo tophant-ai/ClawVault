@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, cast
 
 import structlog
 
@@ -84,6 +84,6 @@ class SkillRegistry:
             SkillAuditSkill,
             ClawVaultInstallerSkill,
         ]:
-            self.register(cls)
+            self.register(cast(type[BaseSkill], cls))
 
         logger.info("builtin_skills_registered", count=len(self._skills))

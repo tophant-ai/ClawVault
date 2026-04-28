@@ -109,6 +109,7 @@ class OpenClawConfig(BaseModel):
 class FileMonitorConfig(BaseModel):
     enabled: bool = True
     watch_home_sensitive: bool = True
+    watch_project_sensitive: bool = True
     watch_paths: list[str] = Field(default_factory=list)
     watch_patterns: list[str] = Field(
         default_factory=lambda: [

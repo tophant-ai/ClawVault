@@ -2,9 +2,8 @@
 """
 ClawVault Operations - Standalone Skill for OpenClaw
 
-Operates ClawVault services, configuration, vault presets, scanning,
-and local filesystem security scans. Complements the tophant-clawvault
-skill (install/health/generate-rule/test/uninstall).
+Operates ClawVault services, configuration, vault presets, and text/file scanning.
+Complements the tophant-clawvault-installer skill for post-install operations.
 
 Usage:
     python clawvault_ops.py start --mode interactive
@@ -18,14 +17,9 @@ Usage:
     python clawvault_ops.py vault-list
     python clawvault_ops.py vault-show full-lockdown
     python clawvault_ops.py vault-apply full-lockdown
-    python clawvault_ops.py local-scan --type credential
-    python clawvault_ops.py scan-schedule-add --cron "0 2 * * *"
-    python clawvault_ops.py scan-schedule-list
-    python clawvault_ops.py scan-schedule-remove <id>
-    python clawvault_ops.py scan-history
 
 For OpenClaw integration:
-    openclaw skill run openclaw-clawvault start --mode interactive
+    openclaw skill run tophant-clawvault-operator start --mode interactive
 """
 
 from __future__ import annotations
@@ -549,204 +543,6 @@ class ClawVaultOps:
         result["file_size"] = size
         return result
 
-    # ── Group E: Local Scanning ────────────────────────────────────
-
-    def local_scan_run(
-        self,
-        scan_type: str = "credential",
-        path: Optional[str] = None,
-        max_files: int = 100,
-    ) -> dict:
-        """Run an on-demand local filesystem security scan."""
-        scan_path = path or str(Path.home())
-
-        try:
-            from claw_vault.local_scan.models import ScanType
-            from claw_vault.local_scan.scanner import LocalScanner
-
-            try:
-                st = ScanType(scan_type)
-            except ValueError:
-                return {
-                    "success": False,
-                    "error": f"Invalid scan type: {scan_type}",
-                    "valid_types": ["credential", "vulnerability", "skill_audit"],
-                }
-
-            scanner = LocalScanner()
-            result = scanner.run_scan(st, scan_path, max_files)
-
-            findings = []
-            for f in result.findings:
-                findings.append({
-                    "file_path": f.file_path,
-                    "finding_type": f.finding_type,
-                    "description": f.description,
-                    "risk_score": f.risk_score,
-                })
-
-            return {
-                "success": result.status.value != "failed",
-                "scan_type": scan_type,
-                "path": scan_path,
-                "files_scanned": result.files_scanned,
-                "findings_count": len(result.findings),
-                "findings": findings,
-                "max_risk_score": result.max_risk_score,
-                "threat_level": result.threat_level,
-                "duration_seconds": result.duration_seconds,
-            }
-
-        except ImportError:
-            # Fallback: use CLI
-            return self._local_scan_via_cli(scan_type, scan_path, max_files)
-
-    def _local_scan_via_cli(self, scan_type: str, path: str, max_files: int) -> dict:
-        """Fallback local scan using CLI."""
-        try:
-            result = subprocess.run(
-                [
-                    sys.executable, "-m", "claw_vault", "local-scan", "run",
-                    "--type", scan_type,
-                    "--path", path,
-                    "--max-files", str(max_files),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            return {
-                "success": result.returncode == 0,
-                "output": result.stdout[:2000],
-                "error": result.stderr[:500] if result.returncode != 0 else None,
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    def scan_schedule_add(
-        self,
-        cron: str,
-        scan_type: str = "credential",
-        path: Optional[str] = None,
-        max_files: int = 100,
-        config_path: Optional[str] = None,
-    ) -> dict:
-        """Add a cron-scheduled local scan."""
-        # Validate cron expression
-        try:
-            from croniter import croniter
-
-            if not croniter.is_valid(cron):
-                return {"success": False, "error": f"Invalid cron expression: {cron}"}
-        except ImportError:
-            pass  # Skip validation if croniter not available
-
-        valid_types = ["credential", "vulnerability", "skill_audit"]
-        if scan_type not in valid_types:
-            return {
-                "success": False,
-                "error": f"Invalid scan type: {scan_type}",
-                "valid_types": valid_types,
-            }
-
-        config = self._load_config(config_path)
-
-        if "local_scan" not in config:
-            config["local_scan"] = {}
-        if "schedules" not in config["local_scan"]:
-            config["local_scan"]["schedules"] = []
-
-        import uuid
-
-        schedule_id = f"sched-{uuid.uuid4().hex[:8]}"
-        schedule = {
-            "id": schedule_id,
-            "cron": cron,
-            "scan_type": scan_type,
-            "path": path or str(Path.home()),
-            "max_files": max_files,
-            "enabled": True,
-        }
-        config["local_scan"]["schedules"].append(schedule)
-
-        saved_path = self._save_config(config, config_path)
-
-        return {
-            "success": True,
-            "schedule_id": schedule_id,
-            "schedule": schedule,
-            "config_path": saved_path,
-        }
-
-    def scan_schedule_list(self, config_path: Optional[str] = None) -> dict:
-        """List all configured scan schedules."""
-        config = self._load_config(config_path)
-        schedules = config.get("local_scan", {}).get("schedules", [])
-
-        return {
-            "success": True,
-            "schedules": schedules,
-            "count": len(schedules),
-        }
-
-    def scan_schedule_remove(self, schedule_id: str, config_path: Optional[str] = None) -> dict:
-        """Remove a scheduled scan by ID."""
-        config = self._load_config(config_path)
-
-        local_scan = config.get("local_scan", {})
-        schedules = local_scan.get("schedules", [])
-        before = len(schedules)
-        schedules = [s for s in schedules if s.get("id") != schedule_id]
-
-        if len(schedules) == before:
-            return {"success": False, "error": f"Schedule '{schedule_id}' not found"}
-
-        local_scan["schedules"] = schedules
-        config["local_scan"] = local_scan
-        saved_path = self._save_config(config, config_path)
-
-        return {
-            "success": True,
-            "removed": schedule_id,
-            "config_path": saved_path,
-        }
-
-    def scan_history(self, limit: int = 20) -> dict:
-        """Show recent local scan results."""
-        history_file = self.config_dir / "data" / "local_scan_history.jsonl"
-
-        if not history_file.exists():
-            return {"success": True, "results": [], "count": 0}
-
-        entries = []
-        try:
-            for line in history_file.read_text(encoding="utf-8").strip().splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                    entries.append({
-                        "timestamp": entry.get("timestamp", ""),
-                        "scan_type": entry.get("scan_type", ""),
-                        "path": entry.get("path", ""),
-                        "files_scanned": entry.get("files_scanned", 0),
-                        "findings_count": len(entry.get("findings", [])),
-                        "max_risk_score": entry.get("max_risk_score", 0),
-                        "threat_level": entry.get("threat_level", ""),
-                        "status": entry.get("status", ""),
-                        "duration_seconds": entry.get("duration_seconds", 0),
-                    })
-                except (json.JSONDecodeError, KeyError):
-                    continue
-        except Exception as e:
-            return {"success": False, "error": f"Failed to read history: {e}"}
-
-        entries.reverse()
-        entries = entries[:limit]
-
-        return {"success": True, "results": entries, "count": len(entries)}
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -821,39 +617,6 @@ def main():
     va_p.add_argument("preset_id", help="Preset ID to apply")
     va_p.add_argument("--config", help="Config file path")
     va_p.add_argument("--json", action="store_true", help="Output JSON")
-
-    # local-scan
-    ls_p = subparsers.add_parser("local-scan", help="Run local scan")
-    ls_p.add_argument("--type", dest="scan_type", default="credential",
-                       choices=["credential", "vulnerability", "skill_audit"])
-    ls_p.add_argument("--path", help="Directory to scan")
-    ls_p.add_argument("--max-files", type=int, default=100)
-    ls_p.add_argument("--json", action="store_true", help="Output JSON")
-
-    # scan-schedule-add
-    ssa_p = subparsers.add_parser("scan-schedule-add", help="Add scheduled scan")
-    ssa_p.add_argument("--cron", required=True, help="Cron expression")
-    ssa_p.add_argument("--type", dest="scan_type", default="credential")
-    ssa_p.add_argument("--path", help="Directory to scan")
-    ssa_p.add_argument("--max-files", type=int, default=100)
-    ssa_p.add_argument("--config", help="Config file path")
-    ssa_p.add_argument("--json", action="store_true", help="Output JSON")
-
-    # scan-schedule-list
-    ssl_p = subparsers.add_parser("scan-schedule-list", help="List scheduled scans")
-    ssl_p.add_argument("--config", help="Config file path")
-    ssl_p.add_argument("--json", action="store_true", help="Output JSON")
-
-    # scan-schedule-remove
-    ssr_p = subparsers.add_parser("scan-schedule-remove", help="Remove scheduled scan")
-    ssr_p.add_argument("schedule_id", help="Schedule ID to remove")
-    ssr_p.add_argument("--config", help="Config file path")
-    ssr_p.add_argument("--json", action="store_true", help="Output JSON")
-
-    # scan-history
-    sh_p = subparsers.add_parser("scan-history", help="Show scan history")
-    sh_p.add_argument("--limit", type=int, default=20)
-    sh_p.add_argument("--json", action="store_true", help="Output JSON")
 
     args = parser.parse_args()
 
@@ -995,69 +758,6 @@ def main():
                 print(result.get("warning", ""))
             else:
                 print(f"Error: {result.get('error')}")
-
-    elif args.command == "local-scan":
-        result = ops.local_scan_run(
-            scan_type=args.scan_type,
-            path=args.path,
-            max_files=args.max_files,
-        )
-        if not args.json:
-            if result.get("success"):
-                print(f"Scan: {result['scan_type']} on {result['path']}")
-                print(f"  Files scanned: {result['files_scanned']}")
-                print(f"  Findings: {result['findings_count']}")
-                print(f"  Max risk: {result.get('max_risk_score', 0):.1f} ({result.get('threat_level', '?')})")
-                print(f"  Duration: {result.get('duration_seconds', 0)}s")
-                for f in result.get("findings", []):
-                    print(f"  [{f['finding_type']}] {f['file_path']} - {f['description']} (risk: {f['risk_score']:.1f})")
-            else:
-                print(f"Error: {result.get('error')}")
-
-    elif args.command == "scan-schedule-add":
-        result = ops.scan_schedule_add(
-            cron=args.cron,
-            scan_type=args.scan_type,
-            path=args.path,
-            max_files=args.max_files,
-            config_path=args.config,
-        )
-        if not args.json:
-            if result.get("success"):
-                s = result["schedule"]
-                print(f"Added schedule: {s['id']}")
-                print(f"  Cron: {s['cron']}")
-                print(f"  Type: {s['scan_type']}")
-                print(f"  Path: {s['path']}")
-            else:
-                print(f"Error: {result.get('error')}")
-
-    elif args.command == "scan-schedule-list":
-        result = ops.scan_schedule_list(config_path=args.config)
-        if not args.json:
-            if result["count"] == 0:
-                print("No scheduled scans.")
-            else:
-                for s in result["schedules"]:
-                    enabled = "enabled" if s.get("enabled", True) else "disabled"
-                    print(f"  {s.get('id', '?')} | {s.get('cron', '?')} | {s.get('scan_type', '?')} | {s.get('path', '?')} [{enabled}]")
-
-    elif args.command == "scan-schedule-remove":
-        result = ops.scan_schedule_remove(args.schedule_id, config_path=args.config)
-        if not args.json:
-            if result.get("success"):
-                print(f"Removed schedule: {result['removed']}")
-            else:
-                print(f"Error: {result.get('error')}")
-
-    elif args.command == "scan-history":
-        result = ops.scan_history(limit=args.limit)
-        if not args.json:
-            if result["count"] == 0:
-                print("No scan history.")
-            else:
-                for e in result["results"]:
-                    print(f"  {e['timestamp'][:19]} | {e['scan_type']} | {e['path'][:30]} | {e['files_scanned']} files | {e['findings_count']} findings | risk {e.get('max_risk_score', 0):.1f}")
 
     # JSON output
     if args.json:

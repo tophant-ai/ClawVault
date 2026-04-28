@@ -6,6 +6,7 @@ Covers scenarios: A4 (uploaded content scanning) + E2 (supply-chain security sca
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from claw_vault.skills.base import (
     BaseSkill,
@@ -50,7 +51,7 @@ class SecurityScanSkill(BaseSkill):
         """Full security scan on text content."""
         scan = self.ctx.detection_engine.scan_full(text)
 
-        findings = []
+        findings: list[dict[str, Any]] = []
         for s in scan.sensitive:
             findings.append(
                 {
@@ -121,7 +122,7 @@ class SecurityScanSkill(BaseSkill):
 
         scan = self.ctx.detection_engine.scan_full(content)
 
-        findings = []
+        findings: list[dict[str, Any]] = []
         for s in scan.sensitive:
             line_num = content[: s.start].count("\n") + 1
             findings.append(
@@ -187,7 +188,7 @@ class SecurityScanSkill(BaseSkill):
 
         files_scanned = 0
         total_findings = 0
-        file_results = []
+        file_results: list[dict[str, Any]] = []
 
         for pattern in target_patterns:
             for file_path in dir_path.rglob(pattern):
@@ -217,12 +218,12 @@ class SecurityScanSkill(BaseSkill):
                         {
                             "file": str(file_path.relative_to(dir_path)),
                             "findings": len(detections),
-                            "max_risk": max(d.risk_score for d in detections),
+                            "max_risk": max(float(d.risk_score) for d in detections),
                             "types": list({d.category.value for d in detections}),
                         }
                     )
 
-        file_results.sort(key=lambda r: r["max_risk"], reverse=True)
+        file_results.sort(key=lambda r: float(r["max_risk"]), reverse=True)
 
         return SkillResult(
             success=True,
@@ -234,7 +235,7 @@ class SecurityScanSkill(BaseSkill):
                 "total_findings": total_findings,
                 "results": file_results,
             },
-            risk_score=max((r["max_risk"] for r in file_results), default=0.0),
+            risk_score=float(max((float(r["max_risk"]) for r in file_results), default=0.0))
         )
 
     @tool(
@@ -249,7 +250,7 @@ class SecurityScanSkill(BaseSkill):
         """Assess security risk of a Skill's source code."""
         scan = self.ctx.detection_engine.scan_full(skill_code)
 
-        risk_factors = []
+        risk_factors: list[dict[str, Any]] = []
 
         # Check for obfuscation patterns
         import re
@@ -303,11 +304,11 @@ class SecurityScanSkill(BaseSkill):
                 {
                     "factor": "hardcoded_secret",
                     "detail": f"Hardcoded {s.description}",
-                    "score": s.risk_score,
+                    "score": float(s.risk_score),
                 }
             )
 
-        max_score = max((f["score"] for f in risk_factors), default=0.0)
+        max_score = float(max((float(f["score"]) for f in risk_factors), default=0.0))
 
         if max_score >= 8.0:
             risk_level = "high"

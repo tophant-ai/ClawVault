@@ -119,7 +119,7 @@ class TestSkillRegistry:
         registry = SkillRegistry()
         registry.register_builtins()
         skills = registry.list_skills()
-        assert len(skills) >= 6
+        assert len(skills) >= 7
         names = {s["name"] for s in skills}
         assert "sanitize-restore" in names
         assert "prompt-firewall" in names
@@ -127,6 +127,7 @@ class TestSkillRegistry:
         assert "vault-guard" in names
         assert "security-report" in names
         assert "skill-audit" in names
+        assert "clawvault_installer" in names
 
     def test_shared_context(self):
         ctx = SkillContext()

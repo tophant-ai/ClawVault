@@ -41,6 +41,28 @@ class TestPatternMatching:
     def test_matches_secrets_yaml(self, service):
         assert service._matched_pattern(Path("/app/secrets.yaml")) == "secrets.yaml"
 
+    def test_matches_watch_root_relative_path(self, tmp_path, config):
+        config.watch_paths = [str(tmp_path)]
+        config.watch_patterns = [".docker/config.json"]
+        svc = FileMonitorService(config=config)
+
+        docker_config = tmp_path / ".docker" / "config.json"
+        docker_config.parent.mkdir()
+        docker_config.write_text("{}")
+
+        assert svc._matched_pattern(docker_config) == ".docker/config.json"
+
+    def test_path_pattern_does_not_match_same_basename_elsewhere(self, tmp_path, config):
+        config.watch_paths = [str(tmp_path)]
+        config.watch_patterns = [".docker/config.json"]
+        svc = FileMonitorService(config=config)
+
+        other_config = tmp_path / "other" / "config.json"
+        other_config.parent.mkdir()
+        other_config.write_text("{}")
+
+        assert svc._matched_pattern(other_config) is None
+
     def test_no_match_readme(self, service):
         assert service._matched_pattern(Path("/project/README.md")) is None
 
@@ -55,7 +77,31 @@ class TestPatternMatching:
 
 
 class TestWatchRootResolution:
+    def test_includes_cwd_by_default(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        config = FileMonitorConfig(enabled=True, watch_home_sensitive=False)
+        svc = FileMonitorService(config=config)
+
+        roots = svc._resolve_watch_roots()
+
+        assert tmp_path.resolve() in roots
+
+    def test_project_watch_can_be_disabled(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        config = FileMonitorConfig(
+            enabled=True,
+            watch_home_sensitive=False,
+            watch_project_sensitive=False,
+            watch_paths=[],
+        )
+        svc = FileMonitorService(config=config)
+
+        roots = svc._resolve_watch_roots()
+
+        assert tmp_path.resolve() not in roots
+
     def test_excludes_nonexistent_paths(self, config):
+        config.watch_project_sensitive = False
         config.watch_paths = ["/nonexistent/path/xyz123"]
         svc = FileMonitorService(config=config)
         roots = svc._resolve_watch_roots()
@@ -65,7 +111,7 @@ class TestWatchRootResolution:
         config.watch_paths = [str(tmp_path)]
         svc = FileMonitorService(config=config)
         roots = svc._resolve_watch_roots()
-        assert tmp_path in roots
+        assert tmp_path.resolve() in roots
 
 
 class TestEventEmission:
@@ -334,6 +380,38 @@ class TestEnforcementCallback:
         assert len(calls) >= 1
         path, scan = calls[0]
         assert ".env" in path
+        assert scan.has_threats
+
+    def test_enforcement_callback_called_for_default_project_root(
+        self, config, tmp_path, monkeypatch
+    ):
+        """Project-local sensitive files should be protected without explicit watch_paths."""
+        from claw_vault.detector.engine import DetectionEngine
+
+        monkeypatch.chdir(tmp_path)
+        config.watch_paths = []
+        config.watch_project_sensitive = True
+        engine = DetectionEngine()
+        svc = FileMonitorService(
+            config=config, detection_engine=engine, guard_mode="strict"
+        )
+
+        calls: list[tuple[str, ScanResult]] = []
+
+        def enforcement_cb(path: str, scan: ScanResult) -> None:
+            calls.append((path, scan))
+
+        svc.set_enforcement_callback(enforcement_cb)
+
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            "OPENAI_API_KEY=sk-proj-abcdef1234567890abcdef1234567890abcdef12345678"
+        )
+        svc._handle_changes({(1, str(env_file))})
+
+        assert len(calls) == 1
+        path, scan = calls[0]
+        assert path == str(env_file)
         assert scan.has_threats
 
     def test_enforcement_callback_not_called_for_safe_files(self, config, tmp_path):

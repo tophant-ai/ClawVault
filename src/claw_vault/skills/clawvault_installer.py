@@ -16,7 +16,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import structlog
 
@@ -28,6 +28,11 @@ from claw_vault.skills.base import (
     SkillResult,
     tool,
 )
+
+CLAWVAULT_PIP_SPEC = "clawvault>=0.1.0,<1.0.0"
+CLAWVAULT_GITHUB_REF = "v0.1.0"
+CLAWVAULT_GITHUB_SPEC = f"git+https://github.com/tophant-ai/ClawVault.git@{CLAWVAULT_GITHUB_REF}"
+DEFAULT_DASHBOARD_HOST = "127.0.0.1"
 
 logger = structlog.get_logger()
 
@@ -118,10 +123,20 @@ class ClawVaultInstallerSkill(BaseSkill):
                     message=f"Installation failed: {result.get('error')}",
                     data=result,
                 )
-            
+
             # Initialize configuration
             config_result = self._initialize_config(mode, config)
-            
+            if not config_result.get("success", False):
+                return SkillResult(
+                    success=False,
+                    message=f"Installation completed but configuration failed: {config_result.get('error')}",
+                    data={
+                        "installation": result,
+                        "config": config_result,
+                    },
+                    warnings=result.get("warnings", []),
+                )
+
             # Run health check
             health = self._check_health_internal()
             
@@ -381,12 +396,15 @@ class ClawVaultInstallerSkill(BaseSkill):
             results = []
             for test in test_cases:
                 result = self.ctx.detection_engine.scan_full(test["text"])
+                findings = getattr(result, "findings", None)
+                detected = bool(findings) or bool(getattr(result, "has_threats", False))
+                risk_score = float(getattr(result, "risk_score", getattr(result, "max_risk_score", 0.0)))
                 results.append({
                     "name": test["name"],
                     "category": test["category"],
-                    "detected": len(result.findings) > 0,
-                    "risk_score": result.risk_score,
-                    "findings": len(result.findings),
+                    "detected": detected,
+                    "risk_score": risk_score,
+                    "findings": len(findings) if findings is not None else int(getattr(result, "total_detections", 0)),
                 })
             
             passed = sum(1 for r in results if r["detected"])
@@ -593,48 +611,60 @@ class ClawVaultInstallerSkill(BaseSkill):
         return self._install_package()
 
     def _install_package(self) -> dict:
-        """Install ClawVault package using pip."""
+        """Install ClawVault package using pinned package sources."""
         try:
-            # Try PyPI first
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "clawvault"],
+            pypi_result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", CLAWVAULT_PIP_SPEC],
                 capture_output=True,
                 text=True,
             )
-            
-            if result.returncode == 0:
+
+            if pypi_result.returncode == 0:
                 return {
                     "success": True,
                     "source": "pypi",
+                    "spec": CLAWVAULT_PIP_SPEC,
                     "version": self._get_installed_version(),
                 }
-            
-            # Try GitHub
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "pip",
-                    "install",
-                    "git+https://github.com/tophant-ai/ClawVault.git",
-                ],
+
+            github_result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", CLAWVAULT_GITHUB_SPEC],
                 capture_output=True,
                 text=True,
             )
-            
-            if result.returncode == 0:
+
+            if github_result.returncode == 0:
                 return {
                     "success": True,
                     "source": "github",
+                    "spec": CLAWVAULT_GITHUB_SPEC,
+                    "github_ref": CLAWVAULT_GITHUB_REF,
                     "version": self._get_installed_version(),
+                    "warnings": [
+                        f"PyPI install failed for {CLAWVAULT_PIP_SPEC}; installed from pinned GitHub ref {CLAWVAULT_GITHUB_REF}."
+                    ],
                 }
-            
+
             return {
                 "success": False,
-                "error": "Failed to install from PyPI and GitHub",
-                "stderr": result.stderr,
+                "error": "Failed to install ClawVault from pinned PyPI spec and pinned GitHub fallback",
+                "attempts": [
+                    {
+                        "source": "pypi",
+                        "command": [sys.executable, "-m", "pip", "install", CLAWVAULT_PIP_SPEC],
+                        "returncode": pypi_result.returncode,
+                        "stderr": pypi_result.stderr,
+                    },
+                    {
+                        "source": "github",
+                        "command": [sys.executable, "-m", "pip", "install", CLAWVAULT_GITHUB_SPEC],
+                        "returncode": github_result.returncode,
+                        "stderr": github_result.stderr,
+                    },
+                ],
+                "stderr": github_result.stderr or pypi_result.stderr,
             }
-            
+
         except Exception as e:
             return {
                 "success": False,
@@ -684,7 +714,7 @@ class ClawVaultInstallerSkill(BaseSkill):
                 },
                 "dashboard": {
                     "enabled": True,
-                    "host": "0.0.0.0",
+                    "host": DEFAULT_DASHBOARD_HOST,
                     "port": 8766,
                 },
                 "rules": [],
@@ -767,13 +797,13 @@ class ClawVaultInstallerSkill(BaseSkill):
         
         return services
 
-    def _get_statistics(self) -> dict:
+    def _get_statistics(self) -> dict[str, Any]:
         """Get statistics from ClawVault API."""
         try:
             import requests
             response = requests.get("http://localhost:8766/api/summary", timeout=3)
             if response.status_code == 200:
-                return response.json()
+                return cast(dict[str, Any], response.json())
         except Exception:
             pass
         return {}

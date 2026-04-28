@@ -101,22 +101,24 @@ https://github.com/user-attachments/assets/1f424172-8833-4ccc-b0d2-abf67c1758dd
 ### 方式 1：作为 OpenClaw Skill 安装（推荐）
 
 ```bash
-# 从 ClawHub 安装
-openclaw skills install tophant-clawvault
+# 从 ClawHub 安装专用安装器
+openclaw skills install tophant-clawvault-installer --version=0.2.9 --force
 
 # 或使用 clawhub CLI 安装
-clawhub install tophant-clawvault
+clawhub install tophant-clawvault-installer --version 0.2.9
 ```
 
-**ClawHub 地址:** https://clawhub.ai/Martin2877/tophant-clawvault
+**ClawHub 地址:** https://clawhub.ai/Martin2877/tophant-clawvault-installer
 
-Skill 提供 AI 引导的安装和管理：
-- `/clawvault install --mode quick` - 快速安装
-- `/clawvault health` - 检查状态
-- `/clawvault generate-rule "拦截 AWS 凭证"` - 创建安全规则
-- `/clawvault test --category all` - 运行检测测试
+安装器 Skill 提供 AI 引导的安装和管理：
+- `/tophant-clawvault-installer install --mode quick` - 快速安装
+- `/tophant-clawvault-installer health` - 检查状态
+- `/tophant-clawvault-installer generate-rule "拦截 AWS 凭证"` - 创建安全规则
+- `/tophant-clawvault-installer test --category all` - 运行检测测试
 
-详见 [skills/tophant-clawvault/](skills/tophant-clawvault/) 查看 Skill 文档。
+详见 [skills/tophant-clawvault-installer/](skills/tophant-clawvault-installer/) 查看 Skill 文档。
+
+安装后的运行期操作由 [skills/tophant-clawvault-operator/](skills/tophant-clawvault-operator/) 提供。
 
 ### 方式 2：作为 Python 包安装
 

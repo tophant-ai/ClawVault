@@ -1,7 +1,7 @@
 {
-  "name": "openclaw-clawvault",
-  "version": "0.1.0",
-  "description": "Operate ClawVault services, configuration, vault presets, scanning, and local filesystem security scans from OpenClaw agents.",
+  "name": "tophant-clawvault-operator",
+  "version": "0.2.5",
+  "description": "Operate ClawVault services, configuration, vault presets, and text/file scanning from OpenClaw agents.",
   "author": "Tophant SPAI Lab",
   "homepage": "https://github.com/tophant-ai/ClawVault",
   "repository": "https://github.com/tophant-ai/ClawVault",
@@ -60,26 +60,6 @@
     "vault-apply": {
       "description": "Apply a vault preset to active configuration",
       "usage": "vault-apply <preset_id>"
-    },
-    "local-scan": {
-      "description": "Run an on-demand local filesystem scan",
-      "usage": "local-scan [--type credential|vulnerability|skill_audit] [--path <dir>] [--max-files 100]"
-    },
-    "scan-schedule-add": {
-      "description": "Add a cron-scheduled local scan",
-      "usage": "scan-schedule-add --cron <expr> [--type credential] [--path <dir>]"
-    },
-    "scan-schedule-list": {
-      "description": "List all scheduled scans",
-      "usage": "scan-schedule-list"
-    },
-    "scan-schedule-remove": {
-      "description": "Remove a scheduled scan by ID",
-      "usage": "scan-schedule-remove <schedule_id>"
-    },
-    "scan-history": {
-      "description": "Show recent local scan results",
-      "usage": "scan-history [--limit 20]"
     }
   }
 }

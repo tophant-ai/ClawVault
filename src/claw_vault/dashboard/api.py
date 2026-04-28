@@ -5,7 +5,7 @@ from __future__ import annotations
 import json as _json
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, cast
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
@@ -97,12 +97,12 @@ def get_agent_config(agent_id: str | None) -> dict:
         }
     """
     # Start with global defaults
-    result = {
+    result = cast(dict[str, Any], {
         "enabled": True,
         "guard_mode": _settings.guard.mode if _settings else "permissive",
         "detection": dict(_global_detection_config),
         "auto_sanitize": _settings.guard.auto_sanitize if _settings else True,
-    }
+    })
 
     if not agent_id:
         return result
@@ -126,7 +126,8 @@ def get_agent_config(agent_id: str | None) -> dict:
     # Merge detection config: agent settings override global
     agent_detection = agent.get("detection", {})
     if agent_detection:
-        result["detection"] = {**result["detection"], **agent_detection}
+        result["detection"] = dict(result["detection"])
+        result["detection"].update(agent_detection)
 
     return result
 
@@ -235,6 +236,7 @@ class OpenClawSessionRedactionUpdate(BaseModel):
 class FileMonitorConfigUpdate(BaseModel):
     enabled: bool | None = None
     watch_home_sensitive: bool | None = None
+    watch_project_sensitive: bool | None = None
     watch_paths: list[str] | None = None
     watch_patterns: list[str] | None = None
     scan_content_on_change: bool | None = None
@@ -1744,12 +1746,11 @@ async def get_test_cases():
 
 def _generate_test_case_for_rule(rule: RuleConfig) -> str | None:
     """Generate a test case text that should trigger the given rule."""
-    # Check if rule has a custom test case
     if hasattr(rule, "test_case") and rule.test_case:
         if isinstance(rule.test_case, dict) and "text" in rule.test_case:
-            return rule.test_case["text"]
+            return str(rule.test_case["text"])
         elif hasattr(rule.test_case, "text"):
-            return rule.test_case.text
+            return str(rule.test_case.text)
 
     conditions = rule.when
 
