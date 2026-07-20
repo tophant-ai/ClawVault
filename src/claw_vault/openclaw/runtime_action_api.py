@@ -9,7 +9,15 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from claw_vault.audit.store import AuditStore
-from claw_vault.guard.runtime_action import evaluate_runtime_action, runtime_action_audit_record
+from claw_vault.claude_code.runtime_action_adapter import runtime_action_from_claude_code
+from claw_vault.guard.runtime_action import (
+    InitiatorType,
+    RuntimeAction,
+    RuntimeActionType,
+    SourceAgent,
+    evaluate_runtime_action,
+    runtime_action_audit_record,
+)
 from claw_vault.openclaw.runtime_action_adapter import runtime_action_from_openclaw
 
 router = APIRouter(tags=["openclaw"])
@@ -20,6 +28,16 @@ _MAX_RUNTIME_ACTION_PAYLOAD_BYTES = 64 * 1024
 class OpenClawRuntimeActionRequest(BaseModel):
     """OpenClaw tool action payload for execution-time evaluation."""
 
+    tool_name: str = Field(default="custom")
+    params: dict[str, Any] = Field(default_factory=dict)
+    agent_id: str | None = None
+    session_id: str | None = None
+
+
+class RuntimeActionRequest(BaseModel):
+    """Generic tool action payload for execution-time evaluation."""
+
+    source_agent: str = Field(default=SourceAgent.UNKNOWN.value)
     tool_name: str = Field(default="custom")
     params: dict[str, Any] = Field(default_factory=dict)
     agent_id: str | None = None
@@ -46,6 +64,16 @@ def set_audit_store(audit_store: AuditStore | None) -> None:
     _audit_store = audit_store
 
 
+@router.post("/runtime-action", response_model=OpenClawRuntimeActionResponse)
+async def evaluate_generic_runtime_action(
+    payload: RuntimeActionRequest,
+    request: Request,
+) -> OpenClawRuntimeActionResponse:
+    _validate_local_request(request)
+    _validate_payload_size(payload)
+    return await _evaluate_runtime_action(_runtime_action_from_payload(payload))
+
+
 @router.post("/openclaw/runtime-action", response_model=OpenClawRuntimeActionResponse)
 async def evaluate_openclaw_runtime_action(
     payload: OpenClawRuntimeActionRequest,
@@ -59,6 +87,10 @@ async def evaluate_openclaw_runtime_action(
         agent_id=payload.agent_id,
         session_id=payload.session_id,
     )
+    return await _evaluate_runtime_action(action)
+
+
+async def _evaluate_runtime_action(action: RuntimeAction) -> OpenClawRuntimeActionResponse:
     decision = evaluate_runtime_action(action)
     audit_recorded = False
 
@@ -87,6 +119,47 @@ async def evaluate_openclaw_runtime_action(
         block_reason=block_reason,
         audit_recorded=audit_recorded,
     )
+
+
+def _runtime_action_from_payload(payload: RuntimeActionRequest) -> RuntimeAction:
+    source_agent = _source_agent(payload.source_agent)
+    if source_agent == SourceAgent.OPENCLAW:
+        return runtime_action_from_openclaw(
+            tool_name=payload.tool_name,
+            params=payload.params,
+            agent_id=payload.agent_id,
+            session_id=payload.session_id,
+        )
+    if source_agent == SourceAgent.CLAUDE_CODE:
+        return runtime_action_from_claude_code(
+            tool_name=payload.tool_name,
+            params=payload.params,
+            agent_id=payload.agent_id,
+            session_id=payload.session_id,
+        )
+    return _runtime_action_from_unknown(payload)
+
+
+def _runtime_action_from_unknown(payload: RuntimeActionRequest) -> RuntimeAction:
+    raw_text = str(payload.params) if payload.params else ""
+    return RuntimeAction(
+        source_agent=SourceAgent.UNKNOWN,
+        tool_name=payload.tool_name,
+        action_type=RuntimeActionType.TOOL_CALL,
+        input_summary=raw_text[:120],
+        raw_input_for_local_detection=raw_text,
+        target=raw_text[:120],
+        initiator_type=InitiatorType.AGENT,
+        initiator_id=payload.agent_id,
+        session_id=payload.session_id,
+    )
+
+
+def _source_agent(value: str) -> SourceAgent:
+    try:
+        return SourceAgent(value)
+    except ValueError:
+        return SourceAgent.UNKNOWN
 
 
 def _validate_local_request(request: Request) -> None:
