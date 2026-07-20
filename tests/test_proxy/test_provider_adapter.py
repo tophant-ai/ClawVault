@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from claw_vault.config import ProviderAdapterConfig, Settings
 from claw_vault.dashboard.api import set_dependencies
 from claw_vault.dashboard.app import create_app
+from claw_vault.guard.rule_engine import RuleEngine
 from claw_vault.proxy.provider_adapter import configure_provider_adapter
 
 TOKEN_FIXTURE = "sk-" + "proj-abc123def456ghi789jkl012mno345pqr678stu901vwx234"
@@ -72,7 +73,14 @@ def _payload(*, stream: bool = False) -> dict[str, object]:
 def _strict_settings() -> Settings:
     settings = Settings()
     settings.guard.mode = "strict"
+    settings.rules = []
     return settings
+
+
+def _rule_engine(**kwargs) -> RuleEngine:
+    engine = RuleEngine(**kwargs)
+    engine.set_rules([])
+    return engine
 
 
 @pytest.fixture(autouse=True)
@@ -137,7 +145,13 @@ def test_provider_adapter_blocks_strict_secret_without_upstream(monkeypatch) -> 
     _FakeAsyncClient.last_request = None
     monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
     configure_provider_adapter(ProviderAdapterConfig(upstream_base_url="https://upstream.test/v1"))
-    set_dependencies(None, None, None, settings=_strict_settings())
+    set_dependencies(
+        None,
+        None,
+        None,
+        settings=_strict_settings(),
+        rule_engine=_rule_engine(mode="strict"),
+    )
     client = TestClient(create_app())
 
     payload = {
@@ -158,7 +172,13 @@ def test_provider_adapter_blocks_strict_stream_secret_without_upstream(monkeypat
     _FakeAsyncClient.last_request = None
     monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
     configure_provider_adapter(ProviderAdapterConfig(upstream_base_url="https://upstream.test/v1"))
-    set_dependencies(None, None, None, settings=_strict_settings())
+    set_dependencies(
+        None,
+        None,
+        None,
+        settings=_strict_settings(),
+        rule_engine=_rule_engine(mode="strict"),
+    )
     client = TestClient(create_app())
 
     payload = {
@@ -180,7 +200,13 @@ def test_provider_adapter_records_dashboard_events_without_raw_secret(monkeypatc
     _FakeAsyncClient.last_request = None
     monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
     configure_provider_adapter(ProviderAdapterConfig(upstream_base_url="https://upstream.test/v1"))
-    set_dependencies(None, None, None, settings=_strict_settings())
+    set_dependencies(
+        None,
+        None,
+        None,
+        settings=_strict_settings(),
+        rule_engine=_rule_engine(mode="strict"),
+    )
     client = TestClient(create_app())
 
     payload = {
