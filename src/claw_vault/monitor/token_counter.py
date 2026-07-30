@@ -21,6 +21,10 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
     "claude-3-sonnet": (0.003, 0.015),
     "claude-3-haiku": (0.00025, 0.00125),
     "claude-3.5-sonnet": (0.003, 0.015),
+    # MiniMax text models (global api.minimax.io / China api.minimaxi.com).
+    # Input / output per 1K tokens derived from per-million-token pricing.
+    "MiniMax-M3": (0.0006, 0.0024),
+    "MiniMax-M2.7": (0.0003, 0.0012),
     "default": (0.005, 0.015),
 }
 
@@ -121,4 +125,6 @@ class TokenCounter:
             return "gpt-4o"
         elif "anthropic" in url:
             return "claude-3.5-sonnet"
+        elif "minimax" in url:
+            return "MiniMax-M3"
         return "default"

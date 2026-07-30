@@ -111,6 +111,13 @@ curl -X POST http://localhost:8766/api/config/guard \
 - `api.siliconflow.cn`
 - `*.openai.azure.com`
 - `generativelanguage.googleapis.com`
+- `openrouter.ai`
+- `dashscope.aliyuncs.com`
+- `ark.cn-beijing.volces.com`
+- `api.deepseek.com`
+- `api.moonshot.cn`
+- `api.minimax.io`
+- `api.minimaxi.com`
 
 添加更多域名，编辑 `~/.ClawVault/config.yaml`：
 

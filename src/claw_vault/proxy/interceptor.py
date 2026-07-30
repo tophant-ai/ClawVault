@@ -64,6 +64,8 @@ class ClawVaultAddon:
             "api.openai.com",
             "api.anthropic.com",
             "api.siliconflow.cn",
+            "api.minimax.io",
+            "api.minimaxi.com",
         ]
         self._session_id = str(uuid.uuid4())[:8]
         self._pending_requests: dict[str, dict[str, Any]] = {}

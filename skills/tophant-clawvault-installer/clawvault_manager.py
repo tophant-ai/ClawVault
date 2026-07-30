@@ -370,6 +370,13 @@ class ClawVaultManager:
                     "api.siliconflow.cn",
                     "*.openai.azure.com",
                     "generativelanguage.googleapis.com",
+                    "openrouter.ai",
+                    "dashscope.aliyuncs.com",
+                    "ark.cn-beijing.volces.com",
+                    "api.deepseek.com",
+                    "api.moonshot.cn",
+                    "api.minimax.io",
+                    "api.minimaxi.com",
                 ],
             },
             "detection": {

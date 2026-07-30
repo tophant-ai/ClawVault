@@ -225,6 +225,35 @@ def test_addon_intercepts_openrouter_host(monkeypatch: pytest.MonkeyPatch) -> No
     assert flow.response.status_code == 403
 
 
+def test_addon_intercepts_minimax_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "claw_vault.proxy.interceptor._get_agent_config",
+        lambda agent_id: {"enabled": True, "guard_mode": "strict", "auto_sanitize": False},
+    )
+
+    addon = ClawVaultAddon(
+        rule_engine=RuleEngine(mode="strict", auto_sanitize=False),
+        token_counter=TokenCounter(),
+        intercept_hosts=["api.minimax.io"],
+    )
+    request_body = json.dumps(
+        {"model": "MiniMax-M3", "messages": [{"role": "user", "content": "password=Secret123"}]}
+    )
+    flow = _DummyFlow(
+        request=_DummyRequest(
+            _text=request_body,
+            pretty_url="https://api.minimax.io/v1/chat/completions",
+            pretty_host="api.minimax.io",
+            headers={"Content-Type": "application/json"},
+        )
+    )
+
+    addon.request(flow)
+
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+
+
 def _openclaw_tui_message(content: str) -> str:
     return (
         'Sender (untrusted metadata):\n'
