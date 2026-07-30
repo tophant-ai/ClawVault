@@ -37,6 +37,8 @@ class ProxyConfig(BaseModel):
             "ark.cn-beijing.volces.com",
             "api.deepseek.com",
             "api.moonshot.cn",
+            "api.minimax.io",
+            "api.minimaxi.com",
         ]
     )
 
