@@ -1145,8 +1145,7 @@ def _persist_config():
 @router.get("/monitor/overview")
 async def get_monitor_overview():
     """Get aggregated monitoring stats for the protection center dashboard."""
-    history = _scan_history
-    all_events = history
+    all_events = await _monitor_scan_history(limit=500)
     warnings = sum(1 for e in all_events if e.get("action") == "ask_user")
     blocks = sum(1 for e in all_events if e.get("action") == "block")
     allows = sum(1 for e in all_events if e.get("action") == "allow")
@@ -1197,13 +1196,73 @@ async def get_monitor_trends():
 @router.get("/monitor/log-stream")
 async def get_monitor_log_stream(limit: int = Query(default=50, le=200)):
     """Get recent analysis log lines for the real-time log panel."""
-    return _analysis_log[:limit]
+    logs = [*_analysis_log, *await _audit_monitor_log_stream(limit)]
+    logs.sort(key=lambda item: str(item.get("ts") or ""), reverse=True)
+    return logs[:limit]
 
 
 @router.get("/monitor/security-events")
 async def get_monitor_security_events(limit: int = Query(default=50, le=200)):
     """Get security event timeline."""
-    return _security_events[:limit]
+    events = [*_security_events, *await _audit_monitor_security_events(limit)]
+    events.sort(key=lambda item: str(item.get("ts") or item.get("timestamp") or ""), reverse=True)
+    return events[:limit]
+
+
+async def _monitor_scan_history(limit: int = 200) -> list[dict[str, Any]]:
+    items = [
+        *_scan_history,
+        *await _runtime_action_scan_history(limit),
+        *await _user_prompt_scan_history(limit),
+    ]
+    items.sort(key=lambda item: str(item.get("timestamp") or ""), reverse=True)
+    return items[:limit]
+
+
+async def _audit_monitor_log_stream(limit: int) -> list[dict[str, Any]]:
+    return [_monitor_log_entry(event) for event in await _monitor_scan_history(limit)]
+
+
+async def _audit_monitor_security_events(limit: int) -> list[dict[str, Any]]:
+    events = []
+    for event in await _monitor_scan_history(limit):
+        security_event = _monitor_security_event(event)
+        if security_event:
+            events.append(security_event)
+    return events
+
+
+def _monitor_log_entry(event: dict[str, Any]) -> dict[str, Any]:
+    action = str(event.get("action") or "allow").upper()
+    source = str(event.get("source") or "proxy")
+    preview = str(event.get("input_preview") or source)
+    return {
+        "ts": event.get("timestamp"),
+        "level": "warn" if event.get("has_threats") else "info",
+        "message": f"[{action}] {source}: {preview[:100]}",
+    }
+
+
+def _monitor_security_event(event: dict[str, Any]) -> dict[str, Any] | None:
+    if not event.get("has_threats"):
+        return None
+    risk_score = float(event.get("max_risk_score") or 0.0)
+    severity = (
+        "critical"
+        if risk_score >= 9
+        else "high"
+        if risk_score >= 7
+        else "medium"
+        if risk_score >= 4
+        else "low"
+    )
+    return {
+        "ts": event.get("timestamp"),
+        "type": event.get("action") or "threat",
+        "severity": severity,
+        "summary": str(event.get("input_preview") or event.get("source") or "security event"),
+        "event_id": event.get("id"),
+    }
 
 
 # --------------- File Monitor Endpoints ---------------
@@ -1825,11 +1884,154 @@ async def get_agent_stats(agent_id: str):
 @router.get("/scan-history")
 async def get_scan_history(limit: int = Query(default=50, le=200), agent_id: Optional[str] = None):
     """Get recent scan history, optionally filtered by agent."""
-    items = _scan_history
+    items = await _monitor_scan_history(limit)
     if agent_id:
         items = [i for i in items if i.get("agent_id") == agent_id]
     return items[:limit]
 
+
+async def _runtime_action_scan_history(limit: int) -> list[dict[str, Any]]:
+    if not _audit_store:
+        return []
+    records = await _audit_store.query_recent(limit)
+    events = []
+    for record in records:
+        event = _runtime_action_scan_event(record)
+        if event:
+            events.append(event)
+    return events
+
+
+def _runtime_action_scan_event(record) -> dict[str, Any] | None:
+    try:
+        details = _json.loads(record.details or "{}")
+    except ValueError:
+        return None
+    if details.get("event_type") != "runtime_action_guard":
+        return None
+
+    decision = str(details.get("decision") or record.action_taken or "allow")
+    action = "ask_user" if decision == "ask-user" else decision
+    risk_level = str(details.get("risk_level") or record.risk_level or "low")
+    categories = [str(category) for category in details.get("categories") or []]
+    reasons = [str(reason) for reason in details.get("reasons") or []]
+    source_agent = str(details.get("source_agent") or record.agent_name or "unknown")
+    tool_name = str(details.get("tool_name") or record.method or "tool")
+    action_type = str(details.get("action_type") or record.api_endpoint or "tool.call")
+    summary = str(details.get("redacted_summary") or details.get("target_summary") or action_type)
+    has_threats = action != "allow" or risk_level in {"medium", "high", "critical"}
+
+    return {
+        "id": f"runtime-action-{record.id or record.timestamp.isoformat()}",
+        "timestamp": record.timestamp.isoformat() + "Z",
+        "source": "runtime_action",
+        "agent_id": record.agent_id,
+        "agent_name": source_agent,
+        "session_id": details.get("session_id") or record.session_id,
+        "input_preview": f"[{source_agent}] {tool_name}: {summary}",
+        "action": action,
+        "has_threats": has_threats,
+        "threat_level": risk_level,
+        "max_risk_score": record.risk_score,
+        "total_detections": len(categories),
+        "sensitive": [
+            {"type": category, "description": category, "masked": "", "risk": record.risk_score}
+            for category in categories
+            if "sensitive" in category or category in {"api_key", "password", "id_card_cn"}
+        ],
+        "commands": [
+            {
+                "command": tool_name,
+                "reason": reason,
+                "risk": record.risk_score,
+                "level": risk_level,
+            }
+            for reason in reasons
+            if "command" in reason.lower() or "delete" in reason.lower()
+        ],
+        "injections": [],
+        "tool_calls": [
+            {
+                "name": tool_name,
+                "parameters": {
+                    "action_type": action_type,
+                    "summary": summary,
+                    "categories": categories,
+                    "reasons": reasons,
+                },
+                "sensitive": has_threats,
+            }
+        ],
+        "tool_call_count": 1,
+        "message_count": 0,
+    }
+
+
+async def _user_prompt_scan_history(limit: int) -> list[dict[str, Any]]:
+    if not _audit_store:
+        return []
+    records = await _audit_store.query_recent(limit)
+    events = []
+    for record in records:
+        event = _user_prompt_scan_event(record)
+        if event:
+            events.append(event)
+    return events
+
+
+def _user_prompt_scan_event(record) -> dict[str, Any] | None:
+    try:
+        details = _json.loads(record.details or "{}")
+    except ValueError:
+        return None
+    if details.get("event_type") != "claude_code_user_prompt_guard":
+        return None
+
+    action = str(details.get("decision") or record.action_taken or "allow")
+    risk_level = str(details.get("risk_level") or record.risk_level or "low")
+    categories = [str(category) for category in details.get("categories") or []]
+    reasons = [str(reason) for reason in details.get("reasons") or []]
+    summary = str(details.get("redacted_summary") or record.user_content or "user prompt")
+    has_threats = action != "allow" or risk_level in {"medium", "high", "critical"}
+
+    return {
+        "id": f"user-prompt-{record.id or record.timestamp.isoformat()}",
+        "timestamp": record.timestamp.isoformat() + "Z",
+        "source": "user_prompt",
+        "agent_id": record.agent_id,
+        "agent_name": details.get("source_agent") or record.agent_name or "claude-code",
+        "session_id": details.get("session_id") or record.session_id,
+        "input_preview": f"[PROMPT] {summary}",
+        "action": action,
+        "has_threats": has_threats,
+        "threat_level": risk_level,
+        "max_risk_score": record.risk_score,
+        "total_detections": len(categories),
+        "sensitive": [
+            {"type": category, "description": category, "masked": "", "risk": record.risk_score}
+            for category in categories
+            if category in {"api_key", "password", "id_card_cn", "email", "jwt_token"}
+            or "secret" in category
+        ],
+        "commands": [
+            {
+                "command": "user prompt",
+                "reason": reason,
+                "risk": record.risk_score,
+                "level": risk_level,
+            }
+            for reason in reasons
+            if "command" in reason.lower() or "delete" in reason.lower()
+        ],
+        "injections": [
+            {"type": category, "description": category, "risk": record.risk_score}
+            for category in categories
+            if "injection" in category or "prompt" in category
+        ],
+        "tool_calls": [],
+        "tool_call_count": 0,
+        "message_count": 1,
+    }
 
 # --------------- Test Cases ---------------
 

@@ -42,7 +42,7 @@ def _claude_code_action_type(tool_name: str) -> RuntimeActionType:
         return RuntimeActionType.SHELL_EXECUTE
     if lowered == "read":
         return RuntimeActionType.FILE_READ
-    if lowered in {"write", "edit"}:
+    if lowered in {"write", "edit", "multiedit"}:
         return RuntimeActionType.FILE_WRITE
     if lowered in {"webfetch", "websearch"}:
         return RuntimeActionType.NETWORK_REQUEST
@@ -57,7 +57,8 @@ def _claude_code_raw_text(action_type: RuntimeActionType, params: dict[str, Any]
     if action_type == RuntimeActionType.FILE_WRITE:
         path = _first_string(params, "file_path", "path")
         content = _first_string(params, "content", "new_string", "old_string")
-        return " ".join(part for part in [path, content] if part)
+        edits = _multiedit_raw_text(params)
+        return " ".join(part for part in [path, content, edits] if part)
     if action_type == RuntimeActionType.NETWORK_REQUEST:
         return _network_raw_text(params)
     return str(params) if params else ""
@@ -94,6 +95,22 @@ def _network_raw_text(params: dict[str, Any]) -> str:
     query = _first_string(params, "query")
     prompt = _first_string(params, "prompt")
     return " ".join(part for part in [url, query, prompt] if part)
+
+
+def _multiedit_raw_text(params: dict[str, Any]) -> str:
+    edits = params.get("edits")
+    if not isinstance(edits, list):
+        return ""
+
+    parts: list[str] = []
+    for edit in edits:
+        if not isinstance(edit, dict):
+            continue
+        for key in ("old_string", "new_string"):
+            value = edit.get(key)
+            if isinstance(value, str):
+                parts.append(value)
+    return " ".join(parts)
 
 
 def _first_string(params: dict[str, Any], *keys: str) -> str:

@@ -319,7 +319,52 @@ async def test_generic_runtime_action_claude_code_read_env_blocks() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generic_runtime_action_unknown_source_requires_confirmation() -> None:
+async def test_generic_runtime_action_claude_code_bash_secret_blocks() -> None:
+    result = await _evaluate_generic(
+        "claude-code",
+        "Bash",
+        {"command": f"echo {SECRET_VALUE}"},
+    )
+
+    assert result.decision == "block"
+    assert result.should_block is True
+    assert result.action_type == "shell.execute"
+    assert "sensitive_command_input" in result.categories
+    assert SECRET_VALUE not in result.redacted_summary
+
+
+@pytest.mark.asyncio
+async def test_generic_runtime_action_claude_code_write_secret_blocks() -> None:
+    result = await _evaluate_generic(
+        "claude-code",
+        "Write",
+        {"file_path": "notes.txt", "content": f"token={SECRET_VALUE}"},
+    )
+
+    assert result.decision == "block"
+    assert result.should_block is True
+    assert result.action_type == "file.write"
+    assert "sensitive_file_write_content" in result.categories
+    assert SECRET_VALUE not in result.redacted_summary
+
+
+@pytest.mark.asyncio
+async def test_generic_runtime_action_claude_code_network_pii_blocks() -> None:
+    id_card = "110105199001011234"
+    result = await _evaluate_generic(
+        "claude-code",
+        "WebSearch",
+        {"query": f"lookup user {id_card}"},
+    )
+
+    assert result.decision == "block"
+    assert result.should_block is True
+    assert result.action_type == "network.request"
+    assert "sensitive_network_payload" in result.categories
+    assert "id_card_cn" in result.categories
+    assert id_card not in result.redacted_summary
+
+
     result = await _evaluate_generic("unknown-agent", "CustomTool", {"value": "hello"})
 
     assert result.decision == "ask-user"

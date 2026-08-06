@@ -90,9 +90,10 @@ https://github.com/user-attachments/assets/d580cfa1-8410-4095-90cb-3d693413a24e
 - **⚠️ 危险命令拦截** — 拦截 `rm -rf`、`curl|bash`、权限提升
 - **🔄 自动脱敏** — 将敏感信息替换为占位符，响应时自动还原
 - **💰 Token 预算控制** — 日/月限额与费用告警
-- **📊 实时仪表盘** — Web UI，支持 Agent 配置、检测详情、快速测试
+- **📊 实时仪表盘** — Web UI，支持审计日志、Protection Monitor、Agent 配置与快速测试
+- **🤖 Agent 集成** — OpenClaw 会话/运行时防护，以及 Claude Code prompt/tool hooks
 
-保险箱内置 **透明代理网关模块**，用于拦截 AI 工具与外部 API（OpenAI、Anthropic 等）之间的流量。
+ClawVault 结合 **透明代理网关**、本地 Agent hooks 和仪表盘监控，用于保护 AI provider 流量、OpenClaw 会话，以及 Claude Code 的用户输入和工具调用。
 
 ## 🚀 快速开始
 
@@ -130,7 +131,7 @@ pip install -e .
 clawvault start
 
 # 扫描文本
-clawvault scan "password=MySecret key=sk-proj-abc123"
+clawvault scan "password=[PASSWORD_EXAMPLE] key=[SYNTHETIC_API_KEY]"
 
 # 交互式演示
 clawvault demo
@@ -156,6 +157,7 @@ clawvault demo
 | `scripts/stop.sh` | 停止所有服务 |
 | `scripts/test.sh` | 运行 CLI + API 测试 |
 | `scripts/setup.sh` | 配置 OpenClaw 代理集成 |
+| `scripts/setup-claude-code.sh` | 配置 Claude Code 用户输入和工具调用 hooks（默认 dry-run） |
 | `scripts/uninstall.sh` | 卸载并恢复原始状态 |
 
 ## 🏗️ 架构
@@ -204,8 +206,43 @@ monitor:
   daily_token_budget: 50000
 ```
 
+### Claude Code Hooks
 
+ClawVault 可以在 Claude Code 的用户输入和工具执行两个阶段提供保护：
 
+- `UserPromptSubmit`：在用户 prompt 发送给模型前进行检测。
+- `PreToolUse`：在 Claude Code 工具调用执行前进行检测。
+
+两类 hooks 复用 ClawVault/OpenClaw 同一套 detector、RuleEngine、guard mode、audit store 和仪表盘展示语义。
+
+先预览，不修改 Claude Code 设置：
+
+```bash
+./scripts/setup-claude-code.sh --dry-run
+```
+
+审核后安装：
+
+```bash
+./scripts/setup-claude-code.sh --yes
+```
+
+安装器会安全合并 `~/.claude/settings.json`：保留已有 hooks、MCP servers、permissions、model、status line 和 OpenClaw 配置；写入前会创建备份，重复执行保持幂等，并且卸载时只移除 ClawVault hooks：
+
+```bash
+clawvault claude-code status
+clawvault claude-code uninstall --yes
+```
+
+安装 Claude Code hooks 后需要保持 ClawVault 运行；如果本地 guard API 不可用，hooks 会 fail closed。
+
+手工验证：
+
+- 安全 prompt：应放行。
+- 合成 API key prompt：应在发送给模型前阻断。
+- 危险命令 prompt：按当前 guard mode 阻断或进入确认。
+- `pwd` 这类安全工具调用：应放行并记录审计。
+- Dashboard Audit Log 和 Protection Monitor 应显示对应事件。
 
 ## 📚 文档
 

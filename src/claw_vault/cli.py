@@ -116,6 +116,8 @@ async def _run_services(settings: Settings):
     from claw_vault.monitor.budget import BudgetManager
     from claw_vault.openclaw.runtime_action_api import router as openclaw_runtime_action_router
     from claw_vault.openclaw.runtime_action_api import set_audit_store
+    from claw_vault.claude_code.user_prompt_api import router as user_prompt_router
+    from claw_vault.claude_code.user_prompt_api import set_user_prompt_dependencies
     from claw_vault.proxy.provider_adapter import configure_provider_adapter
     from claw_vault.proxy.server import ProxyServer
     from claw_vault.vault.file_manager import FileManager
@@ -224,8 +226,14 @@ async def _run_services(settings: Settings):
             proxy_server=proxy,
             local_scan_scheduler=scan_scheduler,
         )
+        set_user_prompt_dependencies(
+            audit_store=audit_store,
+            detection_engine=proxy.detection_engine,
+            rule_engine=proxy.rule_engine,
+        )
         dashboard_app = create_app()
         dashboard_app.include_router(openclaw_runtime_action_router, prefix="/api")
+        dashboard_app.include_router(user_prompt_router, prefix="/api")
 
         config = uvicorn.Config(
             dashboard_app,
@@ -751,6 +759,184 @@ def runtime_status(
         console.print("Latest audit event : [yellow]none found[/yellow]")
 
     console.print()
+
+
+# ── Claude Code subcommands ──────────────────────────────────────
+
+claude_code_app = typer.Typer(help="Manage Claude Code hook integration")
+app.add_typer(claude_code_app, name="claude-code")
+
+
+def _claude_code_settings_path(settings: Path | None, scope: str) -> Path:
+    from claw_vault.claude_code.hook_installer import (
+        default_user_settings_path,
+        project_settings_path,
+    )
+
+    if settings is not None:
+        return settings
+    if scope == "user":
+        return default_user_settings_path()
+    if scope == "project":
+        return project_settings_path()
+    console.print("[red]Error: --scope must be 'user' or 'project'[/red]")
+    raise typer.Exit(1)
+
+
+def _print_claude_code_payload(payload: dict[str, object], json_output: bool) -> None:
+    if json_output:
+        console.print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    for key, value in payload.items():
+        console.print(f"{key}: {value}")
+
+
+@claude_code_app.command("status")
+def claude_code_status(
+    settings: Path | None = typer.Option(None, "--settings", help="Path to Claude Code settings.json"),
+    scope: str = typer.Option("user", "--scope", help="Settings scope: user|project"),
+    command: str = typer.Option(
+        "clawvault-claude-code-hook", "--command", help="PreToolUse hook command to check"
+    ),
+    user_prompt_command: str = typer.Option(
+        "clawvault-claude-code-user-prompt-hook",
+        "--user-prompt-command",
+        help="UserPromptSubmit hook command to check",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
+):
+    """Show Claude Code hook integration status."""
+    from claw_vault.claude_code.hook_installer import ClaudeCodeHookInstaller
+
+    installer = ClaudeCodeHookInstaller(
+        _claude_code_settings_path(settings, scope),
+        command=command,
+        user_prompt_command=user_prompt_command,
+    )
+    status_result = installer.status().to_dict()
+    if json_output:
+        _print_claude_code_payload(status_result, json_output=True)
+        return
+
+    console.print("\n[bold]Claude Code Hook Status[/bold]\n")
+    console.print(f"Settings path                  : {status_result['settings_path']}")
+    console.print(f"Settings exists                : {status_result['exists']}")
+    console.print(f"Settings valid                 : {status_result['valid_json']}")
+    console.print(f"Hook installed                 : {status_result['installed']}")
+    console.print(f"PreToolUse installed           : {status_result['pre_tool_use_installed']}")
+    console.print(f"UserPromptSubmit installed     : {status_result['user_prompt_submit_installed']}")
+    console.print(f"PreToolUse command             : {status_result['command']}")
+    console.print(f"PreToolUse command available   : {status_result['command_available']}")
+    console.print(f"UserPrompt command             : {status_result['user_prompt_command']}")
+    console.print(
+        f"UserPrompt command available   : {status_result['user_prompt_command_available']}"
+    )
+    if status_result.get("error"):
+        console.print(f"[red]Error:[/red] {status_result['error']}")
+
+
+@claude_code_app.command("install")
+def claude_code_install(
+    settings: Path | None = typer.Option(None, "--settings", help="Path to Claude Code settings.json"),
+    scope: str = typer.Option("user", "--scope", help="Settings scope: user|project"),
+    command: str = typer.Option(
+        "clawvault-claude-code-hook", "--command", help="PreToolUse hook command to install"
+    ),
+    user_prompt_command: str = typer.Option(
+        "clawvault-claude-code-user-prompt-hook",
+        "--user-prompt-command",
+        help="UserPromptSubmit hook command to install",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without writing"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Apply changes without prompting"),
+    no_backup: bool = typer.Option(False, "--no-backup", help="Do not create a backup"),
+    json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
+):
+    """Install the ClawVault Claude Code hooks into Claude Code settings."""
+    from claw_vault.claude_code.hook_installer import (
+        ClaudeCodeHookInstaller,
+        ClaudeCodeSettingsError,
+    )
+
+    installer = ClaudeCodeHookInstaller(
+        _claude_code_settings_path(settings, scope),
+        command=command,
+        user_prompt_command=user_prompt_command,
+    )
+    try:
+        plan = installer.plan_install(backup=not no_backup)
+    except ClaudeCodeSettingsError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    if dry_run:
+        _print_claude_code_payload(plan.to_dict(), json_output)
+        return
+    if plan.changed and not yes:
+        if not sys.stdin.isatty():
+            console.print("[red]Error:[/red] pass --yes to modify Claude Code settings")
+            raise typer.Exit(1)
+        if not typer.confirm(f"Install ClawVault hook into {plan.settings_path}?"):
+            raise typer.Exit(1)
+
+    try:
+        result = installer.install(backup=not no_backup)
+    except ClaudeCodeSettingsError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    _print_claude_code_payload(result.to_dict(), json_output)
+
+
+@claude_code_app.command("uninstall")
+def claude_code_uninstall(
+    settings: Path | None = typer.Option(None, "--settings", help="Path to Claude Code settings.json"),
+    scope: str = typer.Option("user", "--scope", help="Settings scope: user|project"),
+    command: str = typer.Option(
+        "clawvault-claude-code-hook", "--command", help="PreToolUse hook command to remove"
+    ),
+    user_prompt_command: str = typer.Option(
+        "clawvault-claude-code-user-prompt-hook",
+        "--user-prompt-command",
+        help="UserPromptSubmit hook command to remove",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without writing"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Apply changes without prompting"),
+    no_backup: bool = typer.Option(False, "--no-backup", help="Do not create a backup"),
+    json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
+):
+    """Remove only the ClawVault Claude Code hooks from settings."""
+    from claw_vault.claude_code.hook_installer import (
+        ClaudeCodeHookInstaller,
+        ClaudeCodeSettingsError,
+    )
+
+    installer = ClaudeCodeHookInstaller(
+        _claude_code_settings_path(settings, scope),
+        command=command,
+        user_prompt_command=user_prompt_command,
+    )
+    try:
+        plan = installer.plan_uninstall(backup=not no_backup)
+    except ClaudeCodeSettingsError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    if dry_run:
+        _print_claude_code_payload(plan.to_dict(), json_output)
+        return
+    if plan.changed and not yes:
+        if not sys.stdin.isatty():
+            console.print("[red]Error:[/red] pass --yes to modify Claude Code settings")
+            raise typer.Exit(1)
+        if not typer.confirm(f"Remove ClawVault hook from {plan.settings_path}?"):
+            raise typer.Exit(1)
+
+    try:
+        result = installer.uninstall(backup=not no_backup)
+    except ClaudeCodeSettingsError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    _print_claude_code_payload(result.to_dict(), json_output)
 
 
 # ── Config subcommands ──────────────────────────────────────────

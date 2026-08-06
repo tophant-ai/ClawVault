@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import json
+
 import pytest
 import yaml
 
@@ -344,10 +346,244 @@ def test_persist_config_writes_safe_yaml_for_path_values(
     )
 
 
+@pytest.mark.asyncio
+async def test_scan_history_includes_runtime_action_events(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from claw_vault.guard.runtime_action import (
+        RuntimeAction,
+        RuntimeActionType,
+        SourceAgent,
+        evaluate_runtime_action,
+        runtime_action_audit_record,
+    )
+
+    store = AuditStore(tmp_path / "audit.db")
+    await store.initialize()
+    action = RuntimeAction(
+        source_agent=SourceAgent.CLAUDE_CODE,
+        tool_name="Bash",
+        action_type=RuntimeActionType.SHELL_EXECUTE,
+        input_summary="shell.execute",
+        raw_input_for_local_detection="pwd",
+        target="shell.execute",
+        initiator_id="claude-code-hook",
+        session_id="session-1",
+    )
+    await store.log(runtime_action_audit_record(action, evaluate_runtime_action(action)))
+
+    monkeypatch.setattr(dashboard_api, "_audit_store", store)
+    monkeypatch.setattr(dashboard_api, "_scan_history", [])
+
+    result = await dashboard_api.get_scan_history(limit=10)
+    await store.close()
+
+    assert len(result) == 1
+    event = result[0]
+    assert event["source"] == "runtime_action"
+    assert event["agent_name"] == "claude-code"
+    assert event["tool_calls"][0]["name"] == "Bash"
+    assert event["action"] == "allow"
+
+
+@pytest.mark.asyncio
+async def test_scan_history_runtime_action_redacts_sensitive_details(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from claw_vault.guard.runtime_action import (
+        RuntimeAction,
+        RuntimeActionType,
+        SourceAgent,
+        evaluate_runtime_action,
+        runtime_action_audit_record,
+    )
+
+    secret = "sk" + "-proj-" + "abc123xyz456def789ghi012jkl345"
+    store = AuditStore(tmp_path / "audit.db")
+    await store.initialize()
+    action = RuntimeAction(
+        source_agent=SourceAgent.OPENCLAW,
+        tool_name="Bash",
+        action_type=RuntimeActionType.SHELL_EXECUTE,
+        input_summary="shell.execute",
+        raw_input_for_local_detection="echo " + secret,
+        target="shell.execute",
+        initiator_id="openclaw-agent",
+        session_id="session-2",
+    )
+    await store.log(runtime_action_audit_record(action, evaluate_runtime_action(action)))
+
+    monkeypatch.setattr(dashboard_api, "_audit_store", store)
+    monkeypatch.setattr(dashboard_api, "_scan_history", [])
+
+    result = await dashboard_api.get_scan_history(limit=10)
+    await store.close()
+
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert secret not in serialized
+    assert result[0]["source"] == "runtime_action"
+    assert result[0]["agent_name"] == "openclaw"
+    assert result[0]["action"] == "block"
+    assert result[0]["has_threats"] is True
+
+
+@pytest.mark.asyncio
+async def test_scan_history_includes_user_prompt_events(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from claw_vault.claude_code.user_prompt_api import (
+        ClaudeCodeUserPromptRequest,
+        _audit_record,
+        _evaluate_user_prompt,
+        set_user_prompt_dependencies,
+    )
+    from claw_vault.guard.rule_engine import RuleEngine
+
+    clean_rules = RuleEngine()
+    clean_rules.set_rules([])
+    monkeypatch.setattr(
+        dashboard_api,
+        "get_agent_config",
+        lambda agent_id: {
+            "enabled": True,
+            "guard_mode": "interactive",
+            "auto_sanitize": True,
+            "detection": {
+                "enabled": True,
+                "api_keys": True,
+                "aws_credentials": True,
+                "blockchain": True,
+                "passwords": True,
+                "private_ips": True,
+                "pii": True,
+                "jwt_tokens": True,
+                "ssh_keys": True,
+                "credit_cards": True,
+                "emails": True,
+                "generic_secrets": True,
+                "dangerous_commands": True,
+                "prompt_injection": True,
+            },
+        },
+    )
+    set_user_prompt_dependencies(rule_engine=clean_rules)
+    secret = "sk" + "-proj-" + "abc123xyz456def789ghi012jkl345"
+    store = AuditStore(tmp_path / "audit.db")
+    await store.initialize()
+    payload = ClaudeCodeUserPromptRequest(
+        prompt="Use token " + secret,
+        agent_id="claude-code-hook",
+        session_id="session-3",
+    )
+    await store.log(_audit_record(payload, _evaluate_user_prompt(payload)))
+
+    monkeypatch.setattr(dashboard_api, "_audit_store", store)
+    monkeypatch.setattr(dashboard_api, "_scan_history", [])
+
+    result = await dashboard_api.get_scan_history(limit=10)
+    await store.close()
+
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert secret not in serialized
+    assert len(result) == 1
+    event = result[0]
+    assert event["source"] == "user_prompt"
+    assert event["agent_name"] == "claude-code"
+    assert event["message_count"] == 1
+    assert event["tool_call_count"] == 0
+    assert event["action"] == "sanitize"
+    assert event["has_threats"] is True
+
+
+@pytest.mark.asyncio
+async def test_monitor_overview_includes_user_prompt_and_runtime_action_audit(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from claw_vault.claude_code.user_prompt_api import (
+        ClaudeCodeUserPromptRequest,
+        _audit_record,
+        _evaluate_user_prompt,
+        set_user_prompt_dependencies,
+    )
+    from claw_vault.guard.rule_engine import RuleEngine
+    from claw_vault.guard.runtime_action import (
+        RuntimeAction,
+        RuntimeActionType,
+        SourceAgent,
+        evaluate_runtime_action,
+        runtime_action_audit_record,
+    )
+
+    clean_rules = RuleEngine()
+    clean_rules.set_rules([])
+    monkeypatch.setattr(
+        dashboard_api,
+        "get_agent_config",
+        lambda agent_id: {
+            "enabled": True,
+            "guard_mode": "interactive",
+            "auto_sanitize": True,
+            "detection": {
+                "enabled": True,
+                "api_keys": True,
+                "aws_credentials": True,
+                "blockchain": True,
+                "passwords": True,
+                "private_ips": True,
+                "pii": True,
+                "jwt_tokens": True,
+                "ssh_keys": True,
+                "credit_cards": True,
+                "emails": True,
+                "generic_secrets": True,
+                "dangerous_commands": True,
+                "prompt_injection": True,
+            },
+        },
+    )
+    set_user_prompt_dependencies(rule_engine=clean_rules)
+    store = AuditStore(tmp_path / "audit.db")
+    await store.initialize()
+    prompt_payload = ClaudeCodeUserPromptRequest(
+        prompt="rm " + "-rf",
+        agent_id="claude-code-hook",
+        session_id="session-4",
+    )
+    await store.log(_audit_record(prompt_payload, _evaluate_user_prompt(prompt_payload)))
+    action = RuntimeAction(
+        source_agent=SourceAgent.CLAUDE_CODE,
+        tool_name="Bash",
+        action_type=RuntimeActionType.SHELL_EXECUTE,
+        input_summary="shell.execute",
+        raw_input_for_local_detection="pwd",
+        target="shell.execute",
+        initiator_id="claude-code-hook",
+        session_id="session-4",
+    )
+    await store.log(runtime_action_audit_record(action, evaluate_runtime_action(action)))
+
+    monkeypatch.setattr(dashboard_api, "_audit_store", store)
+    monkeypatch.setattr(dashboard_api, "_scan_history", [])
+
+    overview = await dashboard_api.get_monitor_overview()
+    log_stream = await dashboard_api.get_monitor_log_stream(limit=10)
+    security_events = await dashboard_api.get_monitor_security_events(limit=10)
+    await store.close()
+
+    assert overview["scan_count"] == 2
+    assert overview["message_count"] == 1
+    assert overview["tool_call_count"] == 1
+    assert overview["warning_count"] == 1
+    assert overview["block_count"] == 0
+    assert overview["allow_count"] == 1
+    assert any("user_prompt" in item["message"] for item in log_stream)
+    assert any("runtime_action" in item["message"] for item in log_stream)
+    assert any("[PROMPT]" in item["summary"] for item in security_events)
+
+
 def test_run_scan_returns_block_action_for_strict_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     from claw_vault.guard.rule_engine import RuleEngine
 
-    # Use a clean rule engine without custom rules so strict-mode logic is exercised
     clean_re = RuleEngine()
     clean_re.set_rules([])
     monkeypatch.setattr(dashboard_api, "_rule_engine", clean_re)
@@ -376,8 +612,9 @@ def test_run_scan_returns_block_action_for_strict_mode(monkeypatch: pytest.Monke
             },
         },
     )
+    sample = "password=" + "MyS3cret" + "P@ssw0rd"
 
-    result = dashboard_api._run_scan("password=MyS3cretP@ssw0rd")
+    result = dashboard_api._run_scan(sample)
 
     assert result["has_threats"] is True
     assert result["action"] == "block"

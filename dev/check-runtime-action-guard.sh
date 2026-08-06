@@ -20,6 +20,9 @@ echo "[1/4] Python runtime guard regression tests"
   tests/test_cli_runtime_observability.py \
   tests/test_claude_code_runtime_action_adapter.py \
   tests/test_claude_code_runtime_action_client.py \
+  tests/test_claude_code_runtime_action_hook.py \
+  tests/test_claude_code_hook_installer.py \
+  tests/test_cli_claude_code.py \
   tests/test_guard.py \
   tests/test_sanitizer.py \
   -q
@@ -41,9 +44,14 @@ echo "[4/4] Runtime guard lint checks"
   src/claw_vault/openclaw/runtime_action_adapter.py \
   src/claw_vault/claude_code/runtime_action_adapter.py \
   src/claw_vault/claude_code/runtime_action_client.py \
+  src/claw_vault/claude_code/runtime_action_hook.py \
+  src/claw_vault/claude_code/hook_installer.py \
   tests/test_cli_runtime_observability.py \
   tests/test_claude_code_runtime_action_adapter.py \
-  tests/test_claude_code_runtime_action_client.py
+  tests/test_claude_code_runtime_action_client.py \
+  tests/test_claude_code_runtime_action_hook.py \
+  tests/test_claude_code_hook_installer.py \
+  tests/test_cli_claude_code.py
 
 echo ""
 echo "✅ Runtime Action Guard checks passed"

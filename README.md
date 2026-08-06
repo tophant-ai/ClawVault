@@ -88,9 +88,10 @@ The system will automatically generate and execute the corresponding policy rule
 - **⚠️ Dangerous Command Guard** — Intercept `rm -rf`, `curl|bash`, privilege escalation
 - **🔄 Auto-Sanitization** — Replace secrets with placeholders, restore on response
 - **💰 Token Budget Control** — Daily/monthly limits with cost alerts
-- **📊 Real-time Dashboard** — Web UI with per-agent config, detection details, quick tests
+- **📊 Real-time Dashboard** — Web UI with Audit Log, Protection Monitor, per-agent config, and quick tests
+- **🤖 Agent Integrations** — OpenClaw session/runtime protection and Claude Code prompt/tool hooks
 
-The vault includes a **transparent proxy gateway module** that intercepts traffic between your AI tools and external APIs (OpenAI, Anthropic, etc.).
+ClawVault combines a **transparent proxy gateway**, local agent hooks, and dashboard monitoring to protect AI provider traffic, OpenClaw sessions, and Claude Code prompt/tool activity.
 
 
 ## 🚀 Quick Start
@@ -129,7 +130,7 @@ pip install -e .
 clawvault start
 
 # Scan text
-clawvault scan "password=MySecret key=sk-proj-abc123"
+clawvault scan "password=[PASSWORD_EXAMPLE] key=[SYNTHETIC_API_KEY]"
 
 # Interactive demo
 clawvault demo
@@ -155,6 +156,7 @@ clawvault demo
 | `scripts/stop.sh` | Stop all services |
 | `scripts/test.sh` | Run CLI + API tests |
 | `scripts/setup.sh` | Setup OpenClaw proxy integration |
+| `scripts/setup-claude-code.sh` | Setup Claude Code prompt and tool hooks (dry-run by default) |
 | `scripts/uninstall.sh` | Uninstall and restore original state |
 
 ## 🏗️ Architecture
@@ -228,6 +230,44 @@ Do not set `provider_adapter.upstream_base_url` to `http://127.0.0.1:8766/v1`; t
 When the latest OpenAI-compatible user message is a valid command such as `@clawvault sanitize email=alice@example.test`, ClawVault locally rewrites the provider request so the upstream model sees only the sanitized body, for example `email=[EMAIL_1]`. The upstream provider does not see the original sensitive value or the `@clawvault` control prefix. This flow is sanitize-only: placeholders in the model response are not restored.
 
 Security boundary: sensitive data does not leave the local machine and does not enter the upstream model/provider. Because this mode does not modify OpenClaw runtime storage, local OpenClaw TUI, session, or transcript files may still contain the user's original local input.
+
+### Claude Code Hooks
+
+ClawVault can protect Claude Code at both prompt and tool-execution stages:
+
+- `UserPromptSubmit`: scans user prompts before they are sent to the model.
+- `PreToolUse`: scans Claude Code tool calls before execution.
+
+Both hooks use the same ClawVault/OpenClaw detector, RuleEngine, guard mode, audit store, and dashboard semantics.
+
+Preview the setup without changing Claude Code settings:
+
+```bash
+./scripts/setup-claude-code.sh --dry-run
+```
+
+Install after reviewing the planned change:
+
+```bash
+./scripts/setup-claude-code.sh --yes
+```
+
+The installer safely merges `~/.claude/settings.json`: it preserves existing hooks, MCP servers, permissions, model settings, status line configuration, and OpenClaw configuration. It creates a backup before writing, is idempotent, and can remove only ClawVault hooks:
+
+```bash
+clawvault claude-code status
+clawvault claude-code uninstall --yes
+```
+
+Keep ClawVault running while Claude Code hooks are installed. The hooks fail closed if the local guard API is unavailable.
+
+Manual checks:
+
+- Safe prompt: allowed.
+- Synthetic API key prompt: blocked before model submission.
+- Dangerous command prompt: blocked or reviewed according to guard mode.
+- Safe tool call such as `pwd`: allowed and audited.
+- Dashboard Audit Log and Protection Monitor show the events.
 
 ## 📊 Development Progress
 

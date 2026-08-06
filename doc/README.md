@@ -47,5 +47,6 @@ All Chinese-only guides now live under `doc/zh/` to keep languages separated.
 | `scripts/stop.sh` | Stop all services |
 | `scripts/test.sh` | Run CLI + API tests |
 | `scripts/setup.sh` | Configure OpenClaw proxy integration |
+| `scripts/setup-claude-code.sh` | Configure Claude Code prompt and tool hooks (dry-run by default) |
 | `scripts/uninstall.sh` | Uninstall and restore |
 

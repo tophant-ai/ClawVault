@@ -51,6 +51,8 @@ dev = [
 
 [project.scripts]
 clawvault = "claw_vault.cli:app"
+clawvault-claude-code-hook = "claw_vault.claude_code.runtime_action_hook:main"
+clawvault-claude-code-user-prompt-hook = "claw_vault.claude_code.user_prompt_hook:main"
 
 [project.urls]
 Homepage = "https://github.com/tophant-ai/ClawVault"

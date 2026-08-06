@@ -242,6 +242,8 @@
                         <button id="filter-proxy" onclick="setLogFilter('proxy')" class="px-3 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors">Proxy</button>
                         <button id="filter-file" data-tab="tab-filemonitor" onclick="setLogFilter('file')" class="px-3 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors">File Monitor</button>
                         <button id="filter-plugin" onclick="setLogFilter('plugin')" class="px-3 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors">Plugin</button>
+                        <button id="filter-runtime" onclick="setLogFilter('runtime')" class="px-3 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors">Runtime</button>
+                        <button id="filter-prompt" onclick="setLogFilter('prompt')" class="px-3 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors">Prompt</button>
                     </div>
                     <button id="audit-risk-only-btn" onclick="toggleRiskOnly()" class="px-4 py-2 text-xs font-medium bg-white/5 hover:bg-white/10 text-gray-400 rounded-lg transition-colors">Risks Only</button>
                     <button onclick="loadScanHistory()" class="px-4 py-2 bg-vault-600 hover:bg-vault-500 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5">
@@ -898,7 +900,7 @@ let _auditRiskOnly = false;
 let _auditSearchTerm = '';
 let _filteredAuditEvents = [];
 let _selectedAuditIdx = -1;
-let _logFilter = 'all'; // all, proxy, file
+let _logFilter = 'all'; // all, proxy, file, plugin, runtime, prompt
 
 async function loadScanHistory() {
     const data = await api('/scan-history?limit=200');
@@ -910,7 +912,7 @@ async function loadScanHistory() {
 
 function setLogFilter(filter) {
     _logFilter = filter;
-    ['all', 'proxy', 'file', 'plugin'].forEach(f => {
+    ['all', 'proxy', 'file', 'plugin', 'runtime', 'prompt'].forEach(f => {
         const btn = document.getElementById('filter-' + f);
         if (!btn) return;
         if (f === filter) {
@@ -928,7 +930,9 @@ function filterAuditEvents(events) {
     let filtered = [...events];
     if (_logFilter === 'proxy') filtered = filtered.filter(e => e.source === 'proxy' || !e.source);
     if (_logFilter === 'file') filtered = filtered.filter(e => e.source === 'file');
-    if (_logFilter === 'plugin') filtered = filtered.filter(e => e.source && e.source !== 'proxy' && e.source !== 'file');
+    if (_logFilter === 'plugin') filtered = filtered.filter(e => e.source && !['proxy', 'file', 'runtime_action', 'user_prompt'].includes(e.source));
+    if (_logFilter === 'runtime') filtered = filtered.filter(e => e.source === 'runtime_action');
+    if (_logFilter === 'prompt') filtered = filtered.filter(e => e.source === 'user_prompt');
     if (_auditRiskOnly) filtered = filtered.filter(e => e.has_threats);
     if (_auditSearchTerm) {
         const q = _auditSearchTerm.toLowerCase();
@@ -989,9 +993,15 @@ function renderAuditLog(events) {
         const selected = i === _selectedAuditIdx ? 'ring-1 ring-vault-500' : '';
         // Title
         let title = '';
-        const isPluginSource = e.source && e.source !== 'proxy' && e.source !== 'file';
+        const isRuntimeAction = e.source === 'runtime_action';
+        const isUserPrompt = e.source === 'user_prompt';
+        const isPluginSource = e.source && e.source !== 'proxy' && e.source !== 'file' && !isRuntimeAction && !isUserPrompt;
         if (e.source === 'file') {
             title = escHtml(e.input_preview || 'File event');
+        } else if (isRuntimeAction) {
+            title = escHtml(e.input_preview || 'Runtime action');
+        } else if (isUserPrompt) {
+            title = escHtml(e.input_preview || 'User prompt');
         } else if (isPluginSource) {
             title = escHtml(e.input_preview || 'Plugin event');
         } else if (e.has_threats) {
@@ -1010,6 +1020,8 @@ function renderAuditLog(events) {
                 <span class="badge ${ab.bg} ${ab.text}">${ab.label}</span>
                 <span class="badge ${tc.bg} ${tc.text} uppercase text-[10px]">${e.threat_level}</span>
                 ${e.source === 'file' ? '<span class="badge bg-cyan-500/10 text-cyan-400 text-[10px]">FILE</span>' : ''}
+                ${isRuntimeAction ? '<span class="badge bg-purple-500/10 text-purple-400 text-[10px]">RUNTIME</span>' : ''}
+                ${isUserPrompt ? '<span class="badge bg-amber-500/10 text-amber-400 text-[10px]">PROMPT</span>' : ''}
                 ${isPluginSource ? '<span class="badge bg-purple-500/10 text-purple-400 text-[10px]" title="' + escHtml(e.source) + '">PLUGIN</span>' : ''}
                 ${(e.source === 'proxy' || !e.source) ? '<span class="badge bg-slate-500/10 text-slate-400 text-[10px]">PROXY</span>' : ''}
                 <span class="text-[10px] text-gray-600 font-mono ml-auto">${time}</span>
@@ -1046,7 +1058,7 @@ function renderAuditDetail(e) {
             <span class="badge ${tc.bg} ${tc.text} uppercase">${e.threat_level}</span>
             <span class="text-xs text-gray-600 font-mono ml-auto">${time}</span>
         </div>
-        <h4 class="text-sm font-semibold text-white">${e.source === 'file' ? 'File Monitor Event' : 'Log Details'}</h4>
+        <h4 class="text-sm font-semibold text-white">${e.source === 'file' ? 'File Monitor Event' : e.source === 'user_prompt' ? 'User Prompt Event' : 'Log Details'}</h4>
     </div>`;
 
     // Session metadata

@@ -246,7 +246,41 @@ def test_webhook_secret_exfiltration_blocks() -> None:
     assert SECRET_VALUE not in decision.redacted_summary
 
 
-def test_plain_ls_allows() -> None:
+def test_shell_command_with_api_key_blocks_without_secret_summary() -> None:
+    decision = evaluate_runtime_action(
+        RuntimeAction(
+            tool_name="Bash",
+            action_type=RuntimeActionType.SHELL_EXECUTE,
+            input_summary="shell.execute",
+            raw_input_for_local_detection=f"echo {SECRET_VALUE}",
+            target="shell.execute",
+        )
+    )
+
+    assert decision.decision == RuntimeDecision.BLOCK
+    assert "sensitive_command_input" in decision.categories
+    assert "api_key" in decision.categories
+    assert SECRET_VALUE not in decision.redacted_summary
+
+
+def test_shell_command_with_pii_blocks_without_pii_summary() -> None:
+    phone_number = "13800138000"
+    decision = evaluate_runtime_action(
+        RuntimeAction(
+            tool_name="Bash",
+            action_type=RuntimeActionType.SHELL_EXECUTE,
+            input_summary="shell.execute",
+            raw_input_for_local_detection=f"echo {phone_number}",
+            target="shell.execute",
+        )
+    )
+
+    assert decision.decision == RuntimeDecision.BLOCK
+    assert "sensitive_command_input" in decision.categories
+    assert "phone_cn" in decision.categories
+    assert phone_number not in decision.redacted_summary
+
+
     decision = evaluate_runtime_action(
         RuntimeAction(
             tool_name="Bash",

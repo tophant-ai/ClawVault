@@ -246,6 +246,7 @@ def test_start_realtime_redacts_appended_pair_under_openclaw_root(tmp_path: Path
 
     service.start()
     try:
+        time.sleep(0.2)  # let watcher thread register inotify watches
         with transcript.open("a", encoding="utf-8") as handle:
             handle.write('{"type":"assistant","content":"drop-prev"}\n')
             handle.write('{"errorMessage":"403 [ClawVault] blocked"}\n')

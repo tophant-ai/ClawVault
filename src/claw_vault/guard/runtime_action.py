@@ -295,6 +295,17 @@ def _evaluate_shell(action: RuntimeAction) -> ActionDecision:
             action,
         )
 
+    sensitive_detections = _SENSITIVE_DETECTOR.detect(text)
+    if sensitive_detections:
+        categories.extend(_sensitive_categories("sensitive_command_input", sensitive_detections))
+        return _decision(
+            RuntimeDecision.BLOCK,
+            _from_sensitive_risk(sensitive_detections),
+            ["Shell command contains sensitive data"],
+            categories,
+            action,
+        )
+
     if _SAFE_SHELL_PATTERN.match(text):
         return _decision(
             RuntimeDecision.ALLOW,
@@ -342,6 +353,15 @@ def _evaluate_file_write(action: RuntimeAction) -> ActionDecision:
             ["sensitive_file_write"],
             action,
         )
+    sensitive_detections = _SENSITIVE_DETECTOR.detect(text)
+    if sensitive_detections:
+        return _decision(
+            RuntimeDecision.BLOCK,
+            _from_sensitive_risk(sensitive_detections),
+            ["File write contains sensitive data"],
+            _sensitive_categories("sensitive_file_write_content", sensitive_detections),
+            action,
+        )
     if _has_shell_startup_path(text):
         shell_risks = _detect_command_risks(text)
         if shell_risks:
@@ -371,13 +391,16 @@ def _evaluate_file_write(action: RuntimeAction) -> ActionDecision:
 def _evaluate_network(action: RuntimeAction) -> ActionDecision:
     text = _action_text(action)
     has_webhook = _has_webhook_target(text)
-    has_secret = bool(_SENSITIVE_DETECTOR.detect(text))
-    if has_webhook and has_secret:
+    sensitive_detections = _SENSITIVE_DETECTOR.detect(text)
+    if sensitive_detections:
+        categories = _sensitive_categories("sensitive_network_payload", sensitive_detections)
+        if has_webhook:
+            categories.extend(["secret_exfiltration", "webhook"])
         return _decision(
             RuntimeDecision.BLOCK,
-            RuntimeRiskLevel.CRITICAL,
-            ["Possible secret exfiltration to webhook endpoint"],
-            ["secret_exfiltration", "webhook"],
+            _from_sensitive_risk(sensitive_detections),
+            ["Network request contains sensitive data"],
+            categories,
             action,
         )
     if has_webhook:
@@ -455,6 +478,28 @@ def _decision(
 
 def _detect_command_risks(text: str):
     return _COMMAND_DETECTOR.detect(redact_runtime_text(text))
+
+
+def _sensitive_categories(prefix: str, detections: list[Any]) -> list[str]:
+    categories = [prefix]
+    for detection in detections:
+        category = getattr(detection, "category", None)
+        value = getattr(category, "value", None)
+        if isinstance(value, str) and value not in categories:
+            categories.append(value)
+    return categories
+
+
+def _from_sensitive_risk(detections: list[Any]) -> RuntimeRiskLevel:
+    max_score = max(
+        (getattr(detection, "risk_score", 0.0) for detection in detections),
+        default=0.0,
+    )
+    if max_score >= 9.0:
+        return RuntimeRiskLevel.CRITICAL
+    if max_score >= 7.0:
+        return RuntimeRiskLevel.HIGH
+    return RuntimeRiskLevel.MEDIUM
 
 
 def _has_sensitive_path(text: str) -> bool:
