@@ -19,6 +19,12 @@ CN_WHAT_IS_SANITIZE = "\u4ec0\u4e48\u662f\u8131\u654f\uff1f"
 CN_MY_EMAIL_IS = "\u6211\u7684\u90ae\u7bb1\u662f"
 
 
+def _rule_engine(**kwargs) -> RuleEngine:
+    engine = RuleEngine(**kwargs)
+    engine.set_rules([])
+    return engine
+
+
 @dataclass
 class _DummyMessage:
     _text: str
@@ -111,7 +117,7 @@ def test_addon_writes_single_combined_transaction_entry(
 
     traffic_logger = ProxyTrafficLogger(tmp_path / "proxy_traffic.jsonl")
     addon = ClawVaultAddon(
-        rule_engine=RuleEngine(mode="permissive", auto_sanitize=False),
+        rule_engine=_rule_engine(mode="permissive", auto_sanitize=False),
         token_counter=TokenCounter(),
         intercept_hosts=["api.openai.com"],
         traffic_logger=traffic_logger,
@@ -162,7 +168,7 @@ def test_addon_aggregates_sse_response_before_logging(
 
     traffic_logger = ProxyTrafficLogger(tmp_path / "proxy_traffic.jsonl")
     addon = ClawVaultAddon(
-        rule_engine=RuleEngine(mode="permissive", auto_sanitize=False),
+        rule_engine=_rule_engine(mode="permissive", auto_sanitize=False),
         token_counter=TokenCounter(),
         intercept_hosts=["api.openai.com"],
         traffic_logger=traffic_logger,
@@ -203,7 +209,7 @@ def test_addon_intercepts_openrouter_host(monkeypatch: pytest.MonkeyPatch) -> No
     )
 
     addon = ClawVaultAddon(
-        rule_engine=RuleEngine(mode="strict", auto_sanitize=False),
+        rule_engine=_rule_engine(mode="strict", auto_sanitize=False),
         token_counter=TokenCounter(),
         intercept_hosts=["openrouter.ai"],
     )
@@ -251,7 +257,7 @@ def test_openclaw_clawvault_sanitize_rewrites_and_continues_without_logging_raw(
 
     traffic_logger = ProxyTrafficLogger(tmp_path / "proxy_traffic.jsonl")
     addon = ClawVaultAddon(
-        rule_engine=RuleEngine(mode="permissive", auto_sanitize=False),
+        rule_engine=_rule_engine(mode="permissive", auto_sanitize=False),
         token_counter=TokenCounter(),
         intercept_hosts=["api.openai.com"],
         traffic_logger=traffic_logger,
@@ -311,7 +317,7 @@ def test_openclaw_clawvault_sanitize_question_is_not_local_reply(
     )
 
     addon = ClawVaultAddon(
-        rule_engine=RuleEngine(mode="permissive", auto_sanitize=False),
+        rule_engine=_rule_engine(mode="permissive", auto_sanitize=False),
         token_counter=TokenCounter(),
         intercept_hosts=["api.openai.com"],
     )
@@ -345,7 +351,7 @@ def test_strict_block_openclaw_tui_non_stream_returns_chat_completion(
 
     traffic_logger = ProxyTrafficLogger(tmp_path / "proxy_traffic.jsonl")
     addon = ClawVaultAddon(
-        rule_engine=RuleEngine(mode="strict", auto_sanitize=False),
+        rule_engine=_rule_engine(mode="strict", auto_sanitize=False),
         token_counter=TokenCounter(),
         intercept_hosts=["api.openai.com"],
         traffic_logger=traffic_logger,
@@ -394,7 +400,7 @@ def test_strict_block_openclaw_tui_stream_returns_sse(monkeypatch: pytest.Monkey
     )
 
     addon = ClawVaultAddon(
-        rule_engine=RuleEngine(mode="strict", auto_sanitize=False),
+        rule_engine=_rule_engine(mode="strict", auto_sanitize=False),
         token_counter=TokenCounter(),
         intercept_hosts=["api.openai.com"],
     )
@@ -441,7 +447,7 @@ def test_strict_block_explicit_compat_header_returns_chat_completion(
     )
 
     addon = ClawVaultAddon(
-        rule_engine=RuleEngine(mode="strict", auto_sanitize=False),
+        rule_engine=_rule_engine(mode="strict", auto_sanitize=False),
         token_counter=TokenCounter(),
         intercept_hosts=["api.openai.com"],
     )
@@ -473,7 +479,7 @@ def test_strict_block_non_chat_request_stays_403(monkeypatch: pytest.MonkeyPatch
     )
 
     addon = ClawVaultAddon(
-        rule_engine=RuleEngine(mode="strict", auto_sanitize=False),
+        rule_engine=_rule_engine(mode="strict", auto_sanitize=False),
         token_counter=TokenCounter(),
         intercept_hosts=["api.openai.com"],
     )

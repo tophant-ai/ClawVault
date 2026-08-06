@@ -1,10 +1,14 @@
 """CLI interface for ClawVault using Typer."""
-# ruff: noqa: B008, B904, E501, F401, F541, F841, I001, N817, S110, S112, S603, S607, UP045
+# ruff: noqa: B008, B904, E501, F401, F541, F841, I001, N817, S110, S112, S310, S603, S607, UP045
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import io
+import json
 import os
+import socket
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -110,6 +114,10 @@ async def _run_services(settings: Settings):
     from claw_vault.local_scan.scanner import LocalScanner
     from claw_vault.local_scan.scheduler import ScanScheduler
     from claw_vault.monitor.budget import BudgetManager
+    from claw_vault.openclaw.runtime_action_api import router as openclaw_runtime_action_router
+    from claw_vault.openclaw.runtime_action_api import set_audit_store
+    from claw_vault.claude_code.user_prompt_api import router as user_prompt_router
+    from claw_vault.claude_code.user_prompt_api import set_user_prompt_dependencies
     from claw_vault.proxy.provider_adapter import configure_provider_adapter
     from claw_vault.proxy.server import ProxyServer
     from claw_vault.vault.file_manager import FileManager
@@ -118,6 +126,7 @@ async def _run_services(settings: Settings):
     db_path = settings.config_dir / "data" / "audit.db"
     audit_store = AuditStore(db_path)
     await audit_store.initialize()
+    set_audit_store(audit_store)
 
     # Initialize proxy
     proxy = ProxyServer(settings)
@@ -217,7 +226,14 @@ async def _run_services(settings: Settings):
             proxy_server=proxy,
             local_scan_scheduler=scan_scheduler,
         )
+        set_user_prompt_dependencies(
+            audit_store=audit_store,
+            detection_engine=proxy.detection_engine,
+            rule_engine=proxy.rule_engine,
+        )
         dashboard_app = create_app()
+        dashboard_app.include_router(openclaw_runtime_action_router, prefix="/api")
+        dashboard_app.include_router(user_prompt_router, prefix="/api")
 
         config = uvicorn.Config(
             dashboard_app,
@@ -527,6 +543,400 @@ def status(
         else:
             console.print("[yellow]○ ClawVault is not running[/yellow]")
             console.print("Run [bold]clawvault start[/bold] to start the servers.")
+
+
+def _audit_db_path(config_file: Optional[Path] = None) -> Path:
+    settings = load_settings(config_file)
+    return settings.config_dir / "data" / "audit.db"
+
+
+async def _load_recent_audit_records(db_path: Path, limit: int):
+    from claw_vault.audit.store import AuditStore
+
+    if not db_path.exists():
+        return []
+
+    store = AuditStore(db_path)
+    with contextlib.redirect_stdout(io.StringIO()):
+        await store.initialize()
+    try:
+        return await store.query_recent(limit=limit)
+    finally:
+        await store.close()
+
+
+def _parse_audit_details(details: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(details or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _runtime_action_event_from_record(record) -> dict[str, Any] | None:
+    details = _parse_audit_details(record.details)
+    if details.get("event_type") != "runtime_action_guard":
+        return None
+
+    action_type = details.get("action_type") or ""
+    target_summary = details.get("target_summary") or ""
+    redacted_summary = details.get("redacted_summary") or ""
+    if action_type == "shell.execute":
+        target_summary = "shell.execute"
+        redacted_summary = "shell.execute"
+
+    return {
+        "timestamp": record.timestamp.isoformat(),
+        "source_agent": details.get("source_agent") or record.agent_name or "",
+        "tool_name": details.get("tool_name") or "",
+        "action_type": action_type,
+        "decision": details.get("decision") or record.action_taken,
+        "risk_level": details.get("risk_level") or record.risk_level,
+        "target_summary": target_summary,
+        "redacted_summary": redacted_summary,
+        "categories": details.get("categories") or [],
+        "reasons": details.get("reasons") or [],
+        "session_id": details.get("session_id") or record.session_id,
+        "initiator_id": details.get("initiator_id") or record.agent_id,
+    }
+
+
+def _collect_runtime_action_events(records, limit: int) -> list[dict[str, Any]]:
+    events = []
+    for record in records:
+        event = _runtime_action_event_from_record(record)
+        if event:
+            events.append(event)
+        if len(events) >= limit:
+            break
+    return events
+
+
+def _socket_open(host: str, port: int, timeout: float = 1.0) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _http_get_status(url: str, timeout: float = 1.5) -> int | None:
+    from urllib.error import HTTPError, URLError
+    from urllib.request import Request, urlopen
+
+    request = Request(url, method="GET")
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return response.status
+    except HTTPError as exc:
+        return exc.code
+    except (OSError, URLError):
+        return None
+
+
+@app.command()
+def events(
+    event_type: str = typer.Option(
+        "runtime_action_guard", "--type", help="Event type to show"
+    ),
+    last: int = typer.Option(20, "--last", min=1, max=200, help="Number of events to show"),
+    config_file: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+    json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
+):
+    """Show recent ClawVault audit events."""
+    if event_type != "runtime_action_guard":
+        console.print(f"[red]Unsupported event type:[/red] {event_type}")
+        raise typer.Exit(1)
+
+    records = asyncio.run(_load_recent_audit_records(_audit_db_path(config_file), max(last * 5, 100)))
+    runtime_events = _collect_runtime_action_events(records, last)
+
+    if json_output:
+        console.print(json.dumps(runtime_events, indent=2, ensure_ascii=False))
+        return
+
+    if not runtime_events:
+        console.print("[yellow]No runtime_action_guard events found.[/yellow]")
+        return
+
+    table = Table(title="Runtime Action Guard Events", show_header=True)
+    table.add_column("Time", style="dim")
+    table.add_column("Source", style="cyan")
+    table.add_column("Tool", style="bold")
+    table.add_column("Action")
+    table.add_column("Decision")
+    table.add_column("Risk", style="red")
+    table.add_column("Summary", max_width=44)
+    table.add_column("Reasons", max_width=44)
+
+    for event in runtime_events:
+        summary = event["redacted_summary"] or event["target_summary"]
+        summary = str(summary).replace(" ", " ")
+        reasons = ", ".join(str(reason) for reason in event["reasons"])
+        table.add_row(
+            str(event["timestamp"])[:19],
+            str(event["source_agent"]),
+            str(event["tool_name"]),
+            str(event["action_type"]),
+            str(event["decision"]),
+            str(event["risk_level"]),
+            summary,
+            reasons,
+        )
+
+    console.print(table)
+
+
+runtime_app = typer.Typer(help="Runtime Action Guard observability")
+app.add_typer(runtime_app, name="runtime")
+
+
+@runtime_app.command("status")
+def runtime_status(
+    proxy_port: int = typer.Option(8765, "--proxy-port", help="Proxy port to check"),
+    dashboard_port: int = typer.Option(8766, "--dashboard-port", help="Dashboard port to check"),
+    dashboard_host: str = typer.Option(
+        "127.0.0.1", "--dashboard-host", help="Dashboard host to check"
+    ),
+    config_file: Optional[Path] = typer.Option(None, "--config", help="Path to config.yaml"),
+    json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
+):
+    """Check Runtime Action Guard observability status without mutating audit state."""
+    proxy_running = _socket_open("127.0.0.1", proxy_port)
+    dashboard_running = _socket_open(dashboard_host, dashboard_port)
+    base_url = f"http://{dashboard_host}:{dashboard_port}"
+    health_status = _http_get_status(f"{base_url}/api/health") if dashboard_running else None
+    route_status = (
+        _http_get_status(f"{base_url}/api/openclaw/runtime-action")
+        if dashboard_running
+        else None
+    )
+    route_mounted = route_status == 405
+
+    records = asyncio.run(_load_recent_audit_records(_audit_db_path(config_file), 100))
+    recent_events = _collect_runtime_action_events(records, 1)
+    latest_event = recent_events[0] if recent_events else None
+
+    status_result = {
+        "proxy": {"port": proxy_port, "running": proxy_running},
+        "dashboard": {
+            "host": dashboard_host,
+            "port": dashboard_port,
+            "running": dashboard_running,
+            "health_status": health_status,
+        },
+        "runtime_action_api": {
+            "path": "/api/openclaw/runtime-action",
+            "mounted": route_mounted,
+            "get_status": route_status,
+        },
+        "audit": {"latest_runtime_action_event": latest_event},
+    }
+
+    if json_output:
+        console.print(json.dumps(status_result, indent=2, ensure_ascii=False))
+        return
+
+    console.print("\n[bold]Runtime Action Guard Status[/bold]\n")
+    console.print(
+        f"Proxy              : {'[green]● Running[/green]' if proxy_running else '[red]● Stopped[/red]'} (port {proxy_port})"
+    )
+    console.print(
+        f"Dashboard API      : {'[green]● Running[/green]' if dashboard_running else '[red]● Stopped[/red]'} ({base_url})"
+    )
+    health_text = str(health_status) if health_status is not None else "unreachable"
+    console.print(f"Health endpoint    : {health_text}")
+    route_text = "[green]mounted[/green]" if route_mounted else f"[yellow]unknown[/yellow] ({route_status or 'unreachable'})"
+    console.print(f"Runtime API route  : {route_text}")
+
+    if latest_event:
+        console.print(
+            "Latest audit event : "
+            f"{latest_event['timestamp'][:19]} {latest_event['tool_name']} "
+            f"{latest_event['decision']} ({latest_event['risk_level']})"
+        )
+    else:
+        console.print("Latest audit event : [yellow]none found[/yellow]")
+
+    console.print()
+
+
+# ── Claude Code subcommands ──────────────────────────────────────
+
+claude_code_app = typer.Typer(help="Manage Claude Code hook integration")
+app.add_typer(claude_code_app, name="claude-code")
+
+
+def _claude_code_settings_path(settings: Path | None, scope: str) -> Path:
+    from claw_vault.claude_code.hook_installer import (
+        default_user_settings_path,
+        project_settings_path,
+    )
+
+    if settings is not None:
+        return settings
+    if scope == "user":
+        return default_user_settings_path()
+    if scope == "project":
+        return project_settings_path()
+    console.print("[red]Error: --scope must be 'user' or 'project'[/red]")
+    raise typer.Exit(1)
+
+
+def _print_claude_code_payload(payload: dict[str, object], json_output: bool) -> None:
+    if json_output:
+        console.print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    for key, value in payload.items():
+        console.print(f"{key}: {value}")
+
+
+@claude_code_app.command("status")
+def claude_code_status(
+    settings: Path | None = typer.Option(None, "--settings", help="Path to Claude Code settings.json"),
+    scope: str = typer.Option("user", "--scope", help="Settings scope: user|project"),
+    command: str = typer.Option(
+        "clawvault-claude-code-hook", "--command", help="PreToolUse hook command to check"
+    ),
+    user_prompt_command: str = typer.Option(
+        "clawvault-claude-code-user-prompt-hook",
+        "--user-prompt-command",
+        help="UserPromptSubmit hook command to check",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
+):
+    """Show Claude Code hook integration status."""
+    from claw_vault.claude_code.hook_installer import ClaudeCodeHookInstaller
+
+    installer = ClaudeCodeHookInstaller(
+        _claude_code_settings_path(settings, scope),
+        command=command,
+        user_prompt_command=user_prompt_command,
+    )
+    status_result = installer.status().to_dict()
+    if json_output:
+        _print_claude_code_payload(status_result, json_output=True)
+        return
+
+    console.print("\n[bold]Claude Code Hook Status[/bold]\n")
+    console.print(f"Settings path                  : {status_result['settings_path']}")
+    console.print(f"Settings exists                : {status_result['exists']}")
+    console.print(f"Settings valid                 : {status_result['valid_json']}")
+    console.print(f"Hook installed                 : {status_result['installed']}")
+    console.print(f"PreToolUse installed           : {status_result['pre_tool_use_installed']}")
+    console.print(f"UserPromptSubmit installed     : {status_result['user_prompt_submit_installed']}")
+    console.print(f"PreToolUse command             : {status_result['command']}")
+    console.print(f"PreToolUse command available   : {status_result['command_available']}")
+    console.print(f"UserPrompt command             : {status_result['user_prompt_command']}")
+    console.print(
+        f"UserPrompt command available   : {status_result['user_prompt_command_available']}"
+    )
+    if status_result.get("error"):
+        console.print(f"[red]Error:[/red] {status_result['error']}")
+
+
+@claude_code_app.command("install")
+def claude_code_install(
+    settings: Path | None = typer.Option(None, "--settings", help="Path to Claude Code settings.json"),
+    scope: str = typer.Option("user", "--scope", help="Settings scope: user|project"),
+    command: str = typer.Option(
+        "clawvault-claude-code-hook", "--command", help="PreToolUse hook command to install"
+    ),
+    user_prompt_command: str = typer.Option(
+        "clawvault-claude-code-user-prompt-hook",
+        "--user-prompt-command",
+        help="UserPromptSubmit hook command to install",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without writing"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Apply changes without prompting"),
+    no_backup: bool = typer.Option(False, "--no-backup", help="Do not create a backup"),
+    json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
+):
+    """Install the ClawVault Claude Code hooks into Claude Code settings."""
+    from claw_vault.claude_code.hook_installer import (
+        ClaudeCodeHookInstaller,
+        ClaudeCodeSettingsError,
+    )
+
+    installer = ClaudeCodeHookInstaller(
+        _claude_code_settings_path(settings, scope),
+        command=command,
+        user_prompt_command=user_prompt_command,
+    )
+    try:
+        plan = installer.plan_install(backup=not no_backup)
+    except ClaudeCodeSettingsError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    if dry_run:
+        _print_claude_code_payload(plan.to_dict(), json_output)
+        return
+    if plan.changed and not yes:
+        if not sys.stdin.isatty():
+            console.print("[red]Error:[/red] pass --yes to modify Claude Code settings")
+            raise typer.Exit(1)
+        if not typer.confirm(f"Install ClawVault hook into {plan.settings_path}?"):
+            raise typer.Exit(1)
+
+    try:
+        result = installer.install(backup=not no_backup)
+    except ClaudeCodeSettingsError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    _print_claude_code_payload(result.to_dict(), json_output)
+
+
+@claude_code_app.command("uninstall")
+def claude_code_uninstall(
+    settings: Path | None = typer.Option(None, "--settings", help="Path to Claude Code settings.json"),
+    scope: str = typer.Option("user", "--scope", help="Settings scope: user|project"),
+    command: str = typer.Option(
+        "clawvault-claude-code-hook", "--command", help="PreToolUse hook command to remove"
+    ),
+    user_prompt_command: str = typer.Option(
+        "clawvault-claude-code-user-prompt-hook",
+        "--user-prompt-command",
+        help="UserPromptSubmit hook command to remove",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without writing"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Apply changes without prompting"),
+    no_backup: bool = typer.Option(False, "--no-backup", help="Do not create a backup"),
+    json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
+):
+    """Remove only the ClawVault Claude Code hooks from settings."""
+    from claw_vault.claude_code.hook_installer import (
+        ClaudeCodeHookInstaller,
+        ClaudeCodeSettingsError,
+    )
+
+    installer = ClaudeCodeHookInstaller(
+        _claude_code_settings_path(settings, scope),
+        command=command,
+        user_prompt_command=user_prompt_command,
+    )
+    try:
+        plan = installer.plan_uninstall(backup=not no_backup)
+    except ClaudeCodeSettingsError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    if dry_run:
+        _print_claude_code_payload(plan.to_dict(), json_output)
+        return
+    if plan.changed and not yes:
+        if not sys.stdin.isatty():
+            console.print("[red]Error:[/red] pass --yes to modify Claude Code settings")
+            raise typer.Exit(1)
+        if not typer.confirm(f"Remove ClawVault hook from {plan.settings_path}?"):
+            raise typer.Exit(1)
+
+    try:
+        result = installer.uninstall(backup=not no_backup)
+    except ClaudeCodeSettingsError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    _print_claude_code_payload(result.to_dict(), json_output)
 
 
 # ── Config subcommands ──────────────────────────────────────────

@@ -36,4 +36,5 @@
 | `scripts/stop.sh` | 停止所有服务 |
 | `scripts/test.sh` | 运行 CLI + API 测试 |
 | `scripts/setup.sh` | 配置 OpenClaw 代理集成 |
+| `scripts/setup-claude-code.sh` | 配置 Claude Code 用户输入和工具调用 hooks（默认 dry-run） |
 | `scripts/uninstall.sh` | 卸载并恢复 |

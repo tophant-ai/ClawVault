@@ -14,6 +14,7 @@ interface FakeClawVaultState {
     watch_patterns: string[];
   };
   events: unknown[];
+  runtimeActionMode?: "normal" | "malformed" | "unsafe";
 }
 
 function startFakeClawVault(state: FakeClawVaultState): Promise<{
@@ -43,6 +44,59 @@ function startFakeClawVault(state: FakeClawVaultState): Promise<{
           }
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify({ ok: true, event_id: "test" }));
+        });
+        return;
+      }
+      if (req.method === "POST" && req.url.startsWith("/api/openclaw/runtime-action")) {
+        let body = "";
+        req.on("data", (chunk) => (body += chunk.toString()));
+        req.on("end", () => {
+          if (state.runtimeActionMode === "malformed") {
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ decision: "allow" }));
+            return;
+          }
+          if (state.runtimeActionMode === "unsafe") {
+            res.setHeader("Content-Type", "application/json");
+            res.end(
+              JSON.stringify({
+                decision: "ask-user",
+                risk_level: "medium",
+                reasons: ["requires approval"],
+                categories: ["startup_file_write"],
+                action_type: "file.write",
+                target_summary: "~/.bashrc",
+                redacted_summary: "~/.bashrc",
+                should_block: false,
+                audit_recorded: true,
+              }),
+            );
+            return;
+          }
+          const payload = JSON.parse(body) as {
+            tool_name: string;
+            params: Record<string, unknown>;
+          };
+          const command = String(payload.params.command ?? "");
+          const path = String(payload.params.path ?? "");
+          const isAskUser = payload.tool_name.toLowerCase() === "write" && path === "~/.bashrc";
+          const isBlocked = command === "rm -rf /" || isAskUser;
+          const decision = isAskUser ? "ask-user" : isBlocked ? "block" : "allow";
+          res.setHeader("Content-Type", "application/json");
+          res.end(
+            JSON.stringify({
+              decision,
+              risk_level: isBlocked ? "critical" : "low",
+              reasons: isBlocked ? ["blocked by fake runtime action guard"] : ["allowed"],
+              categories: isBlocked ? ["test_block"] : ["shell"],
+              action_type: payload.tool_name.toLowerCase() === "bash" ? "shell.execute" : "file.write",
+              target_summary: command || path,
+              redacted_summary: command || path,
+              should_block: isBlocked,
+              block_reason: isBlocked ? "ClawVault Runtime Action Guard: test block" : null,
+              audit_recorded: true,
+            }),
+          );
         });
         return;
       }
@@ -297,28 +351,139 @@ describe("end-to-end: plugin ↔ ClawVault", () => {
     expect(r2).toMatchObject({ block: true });
   });
 
-  it("C6: plugin handler does not throw even when ClawVault is unreachable", async () => {
-    state.events.length = 0;
-    const { api, handlers, logs } = makeApi({
-      clawvaultUrl: "http://127.0.0.1:1", // unreachable
+  it("C7: runtime action guard blocks dangerous bash before execution", async () => {
+    const { api, handlers } = makeApi({
+      clawvaultUrl: srv.url,
       mode: "strict",
       refreshIntervalSeconds: 60,
-      requestTimeoutMs: 200,
+      requestTimeoutMs: 1000,
+    });
+    await register(api);
+
+    const result = await handlers.get("before_tool_call")!(
+      { toolName: "Bash", params: { command: "rm -rf /" } },
+      { agentId: "agent-1", sessionId: "session-1" },
+    );
+
+    expect(result).toMatchObject({ block: true });
+    expect((result as { blockReason: string }).blockReason).toMatch(
+      /Runtime Action Guard/,
+    );
+  });
+
+  it("C8: runtime action guard allows benign bash before execution", async () => {
+    const { api, handlers } = makeApi({
+      clawvaultUrl: srv.url,
+      mode: "strict",
+      refreshIntervalSeconds: 60,
+      requestTimeoutMs: 1000,
+    });
+    await register(api);
+
+    const result = await handlers.get("before_tool_call")!(
+      { toolName: "Bash", params: { command: "ls" } },
+      { agentId: "agent-1", sessionId: "session-1" },
+    );
+
+    expect(result).toBeUndefined();
+  });
+
+  it("C9: runtime action guard treats ask-user as block", async () => {
+    const { api, handlers } = makeApi({
+      clawvaultUrl: srv.url,
+      mode: "strict",
+      refreshIntervalSeconds: 60,
+      requestTimeoutMs: 1000,
+    });
+    await register(api);
+
+    const result = await handlers.get("before_tool_call")!(
+      { toolName: "Write", params: { path: "~/.bashrc", content: "alias ll='ls'" } },
+      { agentId: "agent-1", sessionId: "session-1" },
+    );
+
+    expect(result).toMatchObject({ block: true });
+  });
+
+  it("C10: runtime action allow still runs legacy file-guard rules", async () => {
+    state.fileMonitorConfig = {
+      watch_paths: [".ssh/**", ".aws/credentials"],
+      watch_patterns: ["id_rsa*", "*.pem"],
+    };
+    const { api, handlers } = makeApi({
+      clawvaultUrl: srv.url,
+      mode: "strict",
+      refreshIntervalSeconds: 60,
+      requestTimeoutMs: 1000,
     });
     await register(api);
     await handlers.get("gateway_start")!(undefined, {});
     await new Promise((r) => setTimeout(r, 100));
 
-    // Even with unreachable ClawVault, built-in defaults should catch .ssh/**
     const result = await handlers.get("before_tool_call")!(
-      { toolName: "read", params: { path: "/home/u/.ssh/id_rsa" } },
+      { toolName: "Read", params: { path: "/home/user/.ssh/id_rsa" } },
+      { agentId: "agent-1", sessionId: "session-1" },
+    );
+
+    expect(result).toMatchObject({ block: true });
+    expect((result as { blockReason: string }).blockReason).toMatch(/file-guard/);
+  });
+
+  it("C11: unavailable runtime action API fails closed for supported tools", async () => {
+    const { api, handlers } = makeApi({
+      clawvaultUrl: "http://127.0.0.1:1",
+      mode: "log",
+      refreshIntervalSeconds: 60,
+      requestTimeoutMs: 200,
+    });
+    await register(api);
+
+    const result = await handlers.get("before_tool_call")!(
+      { toolName: "Bash", params: { command: "ls" } },
       {},
     );
-    expect(result).toMatchObject({ block: true });
 
-    // Report will fail silently; give it time
-    await new Promise((r) => setTimeout(r, 300));
-    // At least one warn log from reporter or config-client should exist
-    expect(logs.some((l) => l.level === "warn")).toBe(true);
+    expect(result).toMatchObject({ block: true });
+    expect((result as { blockReason: string }).blockReason).toMatch(/unavailable/);
+  });
+
+  it("C12: malformed runtime action response fails closed", async () => {
+    state.runtimeActionMode = "malformed";
+    const { api, handlers } = makeApi({
+      clawvaultUrl: srv.url,
+      mode: "log",
+      refreshIntervalSeconds: 60,
+      requestTimeoutMs: 1000,
+    });
+    await register(api);
+
+    const result = await handlers.get("before_tool_call")!(
+      { toolName: "Bash", params: { command: "ls" } },
+      {},
+    );
+    state.runtimeActionMode = "normal";
+
+    expect(result).toMatchObject({ block: true });
+    expect((result as { blockReason: string }).blockReason).toMatch(/unavailable/);
+  });
+
+  it("C13: unsafe ask-user response cannot silently allow", async () => {
+    state.runtimeActionMode = "unsafe";
+    const { api, handlers } = makeApi({
+      clawvaultUrl: srv.url,
+      mode: "log",
+      refreshIntervalSeconds: 60,
+      requestTimeoutMs: 1000,
+    });
+    await register(api);
+
+    const result = await handlers.get("before_tool_call")!(
+      { toolName: "Write", params: { path: "~/.bashrc", content: "alias ll='ls'" } },
+      {},
+    );
+    state.runtimeActionMode = "normal";
+
+    expect(result).toMatchObject({ block: true });
+    expect((result as { blockReason: string }).blockReason).toMatch(/unavailable/);
   });
 });

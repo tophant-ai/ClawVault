@@ -66,13 +66,92 @@ var ConfigClient = class {
   }
 };
 
-// src/reporter.ts
+// src/runtime-action-client.ts
 import axios2 from "axios";
-var Reporter = class {
+var RuntimeActionClient = class {
   constructor(config, logger) {
     this.config = config;
     this.logger = logger;
     this.http = axios2.create({
+      baseURL: config.clawvaultUrl.replace(/\/+$/, ""),
+      timeout: config.requestTimeoutMs
+    });
+  }
+  config;
+  logger;
+  http;
+  supports(event) {
+    const toolName = event.toolName.toLowerCase();
+    return toolName === "bash" || toolName === "read" || toolName === "write";
+  }
+  async evaluate(event, ctx) {
+    try {
+      const res = await this.http.post("/api/openclaw/runtime-action", {
+        tool_name: event.toolName,
+        params: event.params ?? {},
+        agent_id: ctx?.agentId,
+        session_id: ctx?.sessionId ?? ctx?.sessionKey
+      });
+      return parseDecision(res.data, event.toolName);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`runtime action guard unavailable: ${msg}`);
+      return failClosed(event.toolName, "Runtime Action Guard unavailable");
+    }
+  }
+};
+function parseDecision(data, toolName) {
+  if (!data || typeof data !== "object") {
+    throw new Error("malformed runtime action decision");
+  }
+  const value = data;
+  if (!isDecision(value.decision) || !isRiskLevel(value.risk_level) || !Array.isArray(value.reasons) || !Array.isArray(value.categories) || typeof value.action_type !== "string" || typeof value.target_summary !== "string" || typeof value.redacted_summary !== "string" || typeof value.should_block !== "boolean" || typeof value.audit_recorded !== "boolean") {
+    throw new Error("malformed runtime action decision");
+  }
+  if (value.decision !== "allow" && value.should_block !== true) {
+    throw new Error("unsafe runtime action decision");
+  }
+  return {
+    decision: value.decision,
+    risk_level: value.risk_level,
+    reasons: value.reasons.filter((item) => typeof item === "string"),
+    categories: value.categories.filter((item) => typeof item === "string"),
+    action_type: value.action_type,
+    target_summary: value.target_summary,
+    redacted_summary: value.redacted_summary,
+    should_block: value.should_block,
+    block_reason: value.block_reason,
+    audit_recorded: value.audit_recorded
+  };
+}
+function failClosed(toolName, reason) {
+  return {
+    decision: "block",
+    risk_level: "critical",
+    reasons: [reason],
+    categories: ["runtime_action_guard_unavailable"],
+    action_type: toolName.toLowerCase() === "bash" ? "shell.execute" : `tool.${toolName.toLowerCase()}`,
+    target_summary: "",
+    redacted_summary: "",
+    should_block: true,
+    block_reason: `ClawVault Runtime Action Guard unavailable for ${toolName}`,
+    audit_recorded: false
+  };
+}
+function isDecision(value) {
+  return value === "allow" || value === "block" || value === "ask-user";
+}
+function isRiskLevel(value) {
+  return value === "low" || value === "medium" || value === "high" || value === "critical";
+}
+
+// src/reporter.ts
+import axios3 from "axios";
+var Reporter = class {
+  constructor(config, logger) {
+    this.config = config;
+    this.logger = logger;
+    this.http = axios3.create({
       baseURL: config.clawvaultUrl.replace(/\/+$/, ""),
       timeout: config.requestTimeoutMs
     });
@@ -296,6 +375,7 @@ function register(api) {
     `[file-guard] starting, clawvault=${runtimeCfg.clawvaultUrl} mode=${runtimeCfg.mode}`
   );
   const configClient = new ConfigClient(runtimeCfg, logger);
+  const runtimeActionClient = new RuntimeActionClient(runtimeCfg, logger);
   const reporter = new Reporter(runtimeCfg, logger);
   api.on("gateway_start", async () => {
     configClient.start();
@@ -327,6 +407,23 @@ function register(api) {
         const event = rawEvent;
         if (!event || typeof event.toolName !== "string") return;
         const params = event.params ?? {};
+        if (runtimeActionClient.supports(event)) {
+          const decision = await runtimeActionClient.evaluate(event, ctx);
+          if (decision) {
+            if (decision.should_block) {
+              logger.warn(
+                `[runtime-action] BLOCK ${event.toolName} (${decision.risk_level})`
+              );
+              return {
+                block: true,
+                blockReason: decision.block_reason ?? `ClawVault Runtime Action Guard: ${decision.decision}`
+              };
+            }
+            logger.info(
+              `[runtime-action] ALLOW ${event.toolName} (${decision.risk_level})`
+            );
+          }
+        }
         const rules = configClient.getRules();
         const hit = detect(event.toolName, params, rules);
         if (!hit) return;
@@ -361,6 +458,13 @@ function register(api) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         logger.error(`[file-guard] handler error: ${msg}`);
+        const event = rawEvent;
+        if (typeof event?.toolName === "string" && runtimeActionClient.supports(event)) {
+          return {
+            block: true,
+            blockReason: `ClawVault Runtime Action Guard unavailable for ${event.toolName}`
+          };
+        }
       }
     }
   );

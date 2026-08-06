@@ -1,4 +1,5 @@
 import { ConfigClient } from "./src/config-client.js";
+import { RuntimeActionClient } from "./src/runtime-action-client.js";
 import { Reporter } from "./src/reporter.js";
 import { parseSanitizeIntent } from "./src/sanitize-intent.js";
 import { detect } from "./src/path-detector.js";
@@ -49,6 +50,7 @@ export default function register(api: OpenClawPluginApi): void {
   );
 
   const configClient = new ConfigClient(runtimeCfg, logger);
+  const runtimeActionClient = new RuntimeActionClient(runtimeCfg, logger);
   const reporter = new Reporter(runtimeCfg, logger);
 
   api.on("gateway_start", async () => {
@@ -85,6 +87,27 @@ export default function register(api: OpenClawPluginApi): void {
         const event = rawEvent as ToolCallEvent;
         if (!event || typeof event.toolName !== "string") return;
         const params = (event.params ?? {}) as Record<string, unknown>;
+
+        if (runtimeActionClient.supports(event)) {
+          const decision = await runtimeActionClient.evaluate(event, ctx);
+          if (decision) {
+            if (decision.should_block) {
+              logger.warn(
+                `[runtime-action] BLOCK ${event.toolName} (${decision.risk_level})`,
+              );
+              return {
+                block: true,
+                blockReason:
+                  decision.block_reason ??
+                  `ClawVault Runtime Action Guard: ${decision.decision}`,
+              };
+            }
+            logger.info(
+              `[runtime-action] ALLOW ${event.toolName} (${decision.risk_level})`,
+            );
+          }
+        }
+
         const rules = configClient.getRules();
         const hit = detect(event.toolName, params, rules);
         if (!hit) return;
@@ -128,6 +151,13 @@ export default function register(api: OpenClawPluginApi): void {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         logger.error(`[file-guard] handler error: ${msg}`);
+        const event = rawEvent as Partial<ToolCallEvent>;
+        if (typeof event?.toolName === "string" && runtimeActionClient.supports(event as ToolCallEvent)) {
+          return {
+            block: true,
+            blockReason: `ClawVault Runtime Action Guard unavailable for ${event.toolName}`,
+          };
+        }
       }
     },
   );
