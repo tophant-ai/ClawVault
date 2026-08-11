@@ -1,6 +1,6 @@
 """Tests for token counter and budget manager."""
+# ruff: noqa: S101
 
-from claw_vault.monitor.token_counter import TokenCounter
 from claw_vault.monitor.budget import BudgetManager, BudgetStatus
 
 
@@ -12,6 +12,10 @@ class TestTokenCounter:
     def test_estimate_cost(self, token_counter):
         cost = token_counter.estimate_cost(1000, 500, "gpt-4o")
         assert cost > 0
+
+    def test_estimate_minimax_cost(self, token_counter):
+        assert token_counter.estimate_cost(1000, 1000, "MiniMax-M3") == 0.003
+        assert token_counter.estimate_cost(1000, 1000, "MiniMax-M2.7") == 0.0015
 
     def test_record_usage(self, token_counter):
         usage = token_counter.record_usage("Hello world", "Hi there", "gpt-4o")
@@ -28,6 +32,26 @@ class TestTokenCounter:
         assert "gpt" in token_counter.detect_model_from_url("https://api.openai.com/v1/chat")
         assert "claude" in token_counter.detect_model_from_url(
             "https://api.anthropic.com/v1/messages"
+        )
+        assert (
+            token_counter.detect_model_from_url(
+                "https://api.minimaxi.com/anthropic/v1/messages"
+            )
+            == "MiniMax-M3"
+        )
+
+    def test_detect_minimax_model_from_request(self, token_counter):
+        assert (
+            token_counter.detect_model_from_request(
+                "https://api.minimax.io/v1/chat/completions", '{"model":"MiniMax-M3"}'
+            )
+            == "MiniMax-M3"
+        )
+        assert (
+            token_counter.detect_model_from_request(
+                "https://api.minimaxi.com/anthropic/v1/messages", '{"model":"MiniMax-M2.7"}'
+            )
+            == "MiniMax-M2.7"
         )
 
 

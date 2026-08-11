@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -121,10 +122,23 @@ class TokenCounter:
 
     def detect_model_from_url(self, url: str) -> str:
         """Attempt to detect model name from API URL path."""
-        if "openai" in url:
+        if "minimax" in url:
+            return "MiniMax-M3"
+        elif "openai" in url:
             return "gpt-4o"
         elif "anthropic" in url:
             return "claude-3.5-sonnet"
-        elif "minimax" in url:
-            return "MiniMax-M3"
         return "default"
+
+    def detect_model_from_request(self, url: str, body: str) -> str:
+        """Detect supported request models before falling back to URL attribution."""
+        if "minimax" in url.lower():
+            try:
+                data = json.loads(body)
+            except (json.JSONDecodeError, TypeError):
+                data = None
+            if isinstance(data, dict):
+                model = data.get("model")
+                if model in {"MiniMax-M3", "MiniMax-M2.7"}:
+                    return model
+        return self.detect_model_from_url(url)

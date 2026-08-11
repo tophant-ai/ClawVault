@@ -142,6 +142,9 @@ class ClawVaultAddon:
         # Strip previously blocked messages from conversation history
         body = self._strip_blocked_messages(received_body)
         self._set_request_body(flow, body)
+        request_model = self.token_counter.detect_model_from_request(
+            flow.request.pretty_url, body
+        )
 
         logger.info(
             "request_interception_started",
@@ -173,7 +176,7 @@ class ClawVaultAddon:
                 "forwarded_body": "",
                 "request_headers": dict(flow.request.headers),
                 "start_time": start_time,
-                "model": self.token_counter.detect_model_from_url(flow.request.pretty_url),
+                "model": request_model,
                 "agent_id": None,
                 "session_id": None,
                 "agent_config": {},
@@ -233,9 +236,7 @@ class ClawVaultAddon:
                     "forwarded_body": body,
                     "request_headers": dict(flow.request.headers),
                     "start_time": start_time,
-                    "model": self.token_counter.detect_model_from_url(
-                        flow.request.pretty_url
-                    ),
+                    "model": request_model,
                     "agent_id": agent_id,
                     "session_id": session_id,
                     "agent_config": {},
@@ -256,7 +257,7 @@ class ClawVaultAddon:
             "forwarded_body": body,
             "request_headers": dict(flow.request.headers),
             "start_time": start_time,
-            "model": self.token_counter.detect_model_from_url(flow.request.pretty_url),
+            "model": request_model,
             "agent_id": agent_id,
             "session_id": session_id,
             "agent_config": agent_config,

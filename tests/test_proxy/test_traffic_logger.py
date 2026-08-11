@@ -225,7 +225,16 @@ def test_addon_intercepts_openrouter_host(monkeypatch: pytest.MonkeyPatch) -> No
     assert flow.response.status_code == 403
 
 
-def test_addon_intercepts_minimax_host(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("host", "path", "model"),
+    [
+        ("api.minimax.io", "/v1/chat/completions", "MiniMax-M3"),
+        ("api.minimaxi.com", "/anthropic/v1/messages", "MiniMax-M2.7"),
+    ],
+)
+def test_addon_intercepts_minimax_host(
+    monkeypatch: pytest.MonkeyPatch, host: str, path: str, model: str
+) -> None:
     monkeypatch.setattr(
         "claw_vault.proxy.interceptor._get_agent_config",
         lambda agent_id: {"enabled": True, "guard_mode": "strict", "auto_sanitize": False},
@@ -234,16 +243,16 @@ def test_addon_intercepts_minimax_host(monkeypatch: pytest.MonkeyPatch) -> None:
     addon = ClawVaultAddon(
         rule_engine=RuleEngine(mode="strict", auto_sanitize=False),
         token_counter=TokenCounter(),
-        intercept_hosts=["api.minimax.io"],
+        intercept_hosts=[host],
     )
     request_body = json.dumps(
-        {"model": "MiniMax-M3", "messages": [{"role": "user", "content": "password=Secret123"}]}
+        {"model": model, "messages": [{"role": "user", "content": "password=Secret123"}]}
     )
     flow = _DummyFlow(
         request=_DummyRequest(
             _text=request_body,
-            pretty_url="https://api.minimax.io/v1/chat/completions",
-            pretty_host="api.minimax.io",
+            pretty_url=f"https://{host}{path}",
+            pretty_host=host,
             headers={"Content-Type": "application/json"},
         )
     )
@@ -252,6 +261,7 @@ def test_addon_intercepts_minimax_host(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert flow.response is not None
     assert flow.response.status_code == 403
+    assert addon._pending_requests[str(id(flow))]["model"] == model
 
 
 def _openclaw_tui_message(content: str) -> str:
