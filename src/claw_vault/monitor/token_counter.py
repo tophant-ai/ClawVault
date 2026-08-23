@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -21,6 +22,10 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
     "claude-3-sonnet": (0.003, 0.015),
     "claude-3-haiku": (0.00025, 0.00125),
     "claude-3.5-sonnet": (0.003, 0.015),
+    # MiniMax text models (global api.minimax.io / China api.minimaxi.com).
+    # Input / output per 1K tokens derived from per-million-token pricing.
+    "MiniMax-M3": (0.0006, 0.0024),
+    "MiniMax-M2.7": (0.0003, 0.0012),
     "default": (0.005, 0.015),
 }
 
@@ -117,8 +122,23 @@ class TokenCounter:
 
     def detect_model_from_url(self, url: str) -> str:
         """Attempt to detect model name from API URL path."""
-        if "openai" in url:
+        if "minimax" in url:
+            return "MiniMax-M3"
+        elif "openai" in url:
             return "gpt-4o"
         elif "anthropic" in url:
             return "claude-3.5-sonnet"
         return "default"
+
+    def detect_model_from_request(self, url: str, body: str) -> str:
+        """Detect supported request models before falling back to URL attribution."""
+        if "minimax" in url.lower():
+            try:
+                data = json.loads(body)
+            except (json.JSONDecodeError, TypeError):
+                data = None
+            if isinstance(data, dict):
+                model = data.get("model")
+                if model in {"MiniMax-M3", "MiniMax-M2.7"}:
+                    return model
+        return self.detect_model_from_url(url)

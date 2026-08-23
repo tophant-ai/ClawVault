@@ -35,6 +35,14 @@ def test_default_config_template_loads_complete_yaml():
     assert "check_sensitive" not in config["detection"]
 
 
+def test_default_config_template_intercepts_minimax_hosts():
+    config = get_default_config()
+
+    intercept_hosts = config["proxy"]["intercept_hosts"]
+    assert "api.minimax.io" in intercept_hosts
+    assert "api.minimaxi.com" in intercept_hosts
+
+
 def test_default_config_text_is_parseable_yaml():
     text = get_default_config_text()
     config = yaml.safe_load(text)

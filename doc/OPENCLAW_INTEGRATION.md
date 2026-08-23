@@ -113,6 +113,13 @@ ClawVault intercepts traffic to these hosts by default (configurable in `config.
 - `api.siliconflow.cn`
 - `*.openai.azure.com`
 - `generativelanguage.googleapis.com`
+- `openrouter.ai`
+- `dashscope.aliyuncs.com`
+- `ark.cn-beijing.volces.com`
+- `api.deepseek.com`
+- `api.moonshot.cn`
+- `api.minimax.io`
+- `api.minimaxi.com`
 
 Add more hosts in `~/.ClawVault/config.yaml`:
 
